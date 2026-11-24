@@ -42,9 +42,19 @@ if it will not start. To check by hand:
 ## In the game
 - **Resolution and Fullscreen** are set in the game's own graphics menu; HiDPI displays offer their full pixel sizes.
 - **Upscaling:** when the game renders below the window's size, the picture is enlarged with Apple's MetalFX.
-  **fn+F9** switches to a plain stretch for comparison.
-- **fn+F12** shows a performance overlay (frame rate, resolution, memory).
 - The log is written to `~/Library/Logs/BioShock3-recomp.log`.
+
+### Keys added by the port
+| Key | What it does |
+|---|---|
+| **F12** | Shows or hides the performance overlay in the top-left corner: frame rate and frame time, the resolution and whether MetalFX is upscaling, and memory use. |
+| **F9** | Switches between MetalFX upscaling and a plain stretch, to compare them. Only has an effect while the game renders below the window's size. |
+
+**On Mac keyboards, hold `fn` with these keys** (`fn`+`F12`, `fn`+`F9`). By default the top row controls
+brightness, media and volume, and only sends F1-F12 while `fn` is held. The `fn` key carries a globe icon: it is at the
+bottom-left of laptop and compact keyboards, and above the arrow keys on keyboards with a numeric keypad.
+If you have turned on *Use F1, F2, etc. keys as standard function keys* in System Settings > Keyboard, press the keys
+on their own. All other controls are the game's own and can be changed in its options menu.
 
 ## Known limitations
 - Occasional short hitches, mostly while shaders compile or a level loads.
