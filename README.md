@@ -61,6 +61,12 @@ if it will not start. To check by hand:
 | `setup.sh`, `build_app.sh` | The two commands above. |
 | other `*.sh` | Development loop: `autoloop.sh` watches a `trigger` file and runs the named script (`rebuild`, `regen`, `build_only`, `freeplay`, `bundle`, `format`). |
 
+## Licence
+The port's own source is under the MIT licence (`LICENSE`). `mac32/` is derived from Recomp-Framework, also MIT, and
+keeps its original notice in `mac32/LICENSE`; `mac32/third_party/stb_vorbis.c` carries its own terms in the file.
+The licence covers this repository only. It grants no rights to BioShock Infinite itself, and the app you build
+contains code translated from the game, which is not covered and must not be redistributed.
+
 ## Credits
 Built on [Recomp-Framework](https://github.com/NightSightProductions/Recomp-Framework) by NightSightProductions.
 BioShock Infinite is the property of its respective owners.
