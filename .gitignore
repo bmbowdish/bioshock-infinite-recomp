@@ -62,9 +62,7 @@ fable_*
 FABLE_*
 progress_notes.json
 git_squash*
-format_out.txt
 format_mode
-format_hash_*.txt
 
 # --- one-off patch scripts and investigation tools: kept locally, not part of the port ---
 audio_patch.py
@@ -93,3 +91,9 @@ clone_test_out.txt
 autoloop.sh
 progress_server.py
 git_commit.sh
+
+# --- top level: only the two user commands are tracked; other scripts there are local shims and helpers ---
+/*.sh
+!/setup.sh
+!/build_app.sh
+/local/

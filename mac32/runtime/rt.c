@@ -1310,4 +1310,4 @@ void rt_set_data_import(const char *name, uint32_t guest_addr) {
 // project's starts.txt listing addresses in the MIDDLE of functions as function starts: the recompiler ends a C
 // function at the next listed start, and CPU flags (C locals) do not survive across the cut, so branches went wrong.
 // Lesson: a function that "corrupts memory" in recompiled code may simply be cut in two. Check starts.txt first.
-// Fix and audit: STARTS_AUDIT.md at the top of this repository.
+// Fix and audit: docs/STARTS_AUDIT.md in this repository.

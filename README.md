@@ -32,7 +32,7 @@ The port fits **one exact build** of the game: the Steam Mac release (Aspyr), ex
 `BioShock3.app/Contents/MacOS/BioShock3`, 43,656,724 bytes, SHA-256
 `ed65b2c936d8b4d92a851e7bb676cfc0e9f9e88617564263d62651c2f68ce74b`.
 
-The translated code, `starts.txt`, `hle.txt` and the addresses in `game32.c` are positions inside that file, so they
+The translated code and the files in `game/` (`starts.txt`, `hle.txt`, the addresses in `game32.c`) are positions inside that file, so they
 are the same for everyone who has that build and wrong for anyone who has another (a different store's version or
 a different patch). `setup.sh` and `build_app.sh` check your copy, and the app checks again at launch and says why
 if it will not start. To check by hand:
@@ -54,12 +54,15 @@ if it will not start. To check by hand:
 ## Layout
 | Path | What it is |
 |---|---|
-| `mac32/` | The recompiler and runtime, from NightSightProductions' Recomp-Framework `mac32` target (MIT, see `mac32/LICENSE`), with this project's changes. `tools/recomp32.py` translates i386 to C; `runtime/` is the host side. |
-| `game32.c` | Game-specific glue: engine start-up, resolution and fullscreen hooks, texture pool, supported build. |
-| `starts.txt` | Extra function-start addresses for the translator. Bad entries cause real bugs: see `STARTS_AUDIT.md`. |
-| `hle.txt` | Functions replaced by host implementations. |
 | `setup.sh`, `build_app.sh` | The two commands above. |
-| other `*.sh` | Development scripts: `rebuild.sh` (compile and run), `regen.sh` (re-translate, compile, run), `build_only.sh`, `freeplay.sh` (run until you quit), `bundle.sh`, `format.sh`. |
+| `game/` | Everything specific to this game: `game32.c` (engine start-up, resolution and fullscreen hooks, texture pool, supported build), `starts.txt` (extra function-start addresses for the translator) and `hle.txt` (functions replaced by host implementations). |
+| `mac32/` | The recompiler and runtime, from NightSightProductions' Recomp-Framework `mac32` target (MIT, see `mac32/LICENSE`), with this project's changes. `tools/recomp32.py` translates i386 to C; `runtime/` is the host side. |
+| `scripts/` | Development scripts: `rebuild.sh` (compile and run), `regen.sh` (re-translate, compile, run), `build_only.sh`, `freeplay.sh` (run until you quit), `bundle.sh`, `format.sh`. |
+| `docs/` | `STARTS_AUDIT.md`: how bad entries in `starts.txt` caused real crashes, and how the list was audited. |
+| `Makefile`, `requirements.txt`, `.clang-format` | Build settings, the translator's Python packages, and the code style. |
+
+Created when you build (never committed): `orig.bin` (a link to your game), `gen2/` (the translated game), `build/`
+(the compiled app), `.venv/` (the translator's Python environment) and `logs/` (build and run output).
 
 ## Licence
 The port's own source is under the MIT licence (`LICENSE`). `mac32/` is derived from Recomp-Framework, also MIT, and

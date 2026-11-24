@@ -35,7 +35,7 @@ EXE="$APP/Contents/MacOS/BioShock3"
 if [ -f "$EXE" ]; then
   ln -sfn "$EXE" orig.bin
   ok "found: $APP"
-  want=$(grep '#define GAME_EXE_SHA256' game32.c | grep -o '[0-9a-f]\{64\}')
+  want=$(grep '#define GAME_EXE_SHA256' game/game32.c | grep -o '[0-9a-f]\{64\}')
   got=$(shasum -a 256 "$EXE" | cut -d' ' -f1)
   if [ "$got" = "$want" ]; then ok "it is the supported build"
   else bad "a supported build of the game. This copy is a different version (see 'Supported game version' in README.md)"
