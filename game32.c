@@ -191,19 +191,34 @@ int game32_start(CPU *c) {
                NULL); // skipped along with Aspyr's launcher; shader maps resolve VF types by name
     dump_vf_list(c, "after VF registration");
     uint32_t err = guest_call(c, FN_PREINIT, 2, a2);
-    { // Claude Fable - 2026-11-24: texture pool = int64 bytes at *(0x1A3D688). RT32_TEXPOOL_MB=N forces it; on machines with
-        // <= 8 GB RAM it is capped at 500 MB. ⚠ writing it after PreInit is untested (only runs with the env or on <= 8 GB).
+    { // Claude Fable - 2026-11-24: texture pool = int64 bytes at *(0x1A3D688), set by PreInit from the ini PoolSize.
         uint32_t pg = rd32(0x1A3D688u);
         int64_t pool = (int64_t)(((uint64_t)rd32(pg + 4) << 32) | rd32(pg));
         uint64_t ram = 0;
         size_t rl = sizeof ram;
         sysctlbyname("hw.memsize", &ram, &rl, NULL, 0);
+        if (getenv("RT32_SIM_RAM_MB"))   // testing: pretend the Mac has this much memory
+            ram = (uint64_t)atoll(getenv("RT32_SIM_RAM_MB")) << 20;
         const char *f = getenv("RT32_TEXPOOL_MB");
+        // Claude Fable - 2026-11-24 (revised): pick the pool by installed memory, using the ini value as a floor.
+        //   <= 8 GB RAM : 800 MB, never more than 1000 MB (the pool is a ceiling, not a reservation: at the title
+        //                 scene the footprint was ~1.6-1.7 GB with a 300 MB and with a 1000 MB pool alike)
+        //   more RAM    : 1200 MB
+        // The first version only capped at 500 MB, which left an 8 GB Mac on the ini default of 400 MB: smaller
+        // than the 728 MB the engine picks by itself, and textures thrashed there. RT32_TEXPOOL_MB=N overrides.
+        // Verified: forcing 300 MB through this write makes the title scene thrash (~265 textures created and
+        // deleted per 100 frames), so the engine does honour a value written after PreInit.
+        int small = ram && ram <= (9ull << 30);
+        int64_t floor_mb = small ? 800 : 1200, cap_mb = small ? 1000 : 4096;
         int64_t want = pool;
-        if (f && atoi(f) > 0)
+        if (f && atoi(f) > 0) {
             want = (int64_t)atoi(f) << 20;
-        else if (ram && ram <= (9ull << 30) && pool > (500ll << 20))
-            want = 500ll << 20;
+        } else {
+            if (want < (floor_mb << 20))
+                want = floor_mb << 20;
+            if (want > (cap_mb << 20))
+                want = cap_mb << 20;
+        }
         fprintf(stderr, "[pool] RAM %llu MB | engine texture pool after PreInit: %lld MB%s\n",
                 (unsigned long long)(ram >> 20), (long long)(pool >> 20), want != pool ? " (overriding)" : "");
         if (want != pool) {
