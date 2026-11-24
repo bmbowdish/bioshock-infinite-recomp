@@ -6,7 +6,7 @@ stands in for the 2013 system libraries it expects (Carbon, OpenGL, Bink video, 
 
 **This repository contains no game code and no game data.** You need your own copy of the game, and the
 translation happens on your machine from that copy. This is an unofficial fan project, not affiliated with or
-endorsed by the game's developers or publishers.
+endorsed by the game's developers or publishers. **I cannot guarantee there is no malware or broken code. Use at your own risk.**
 
 ## What you need
 - An Apple Silicon Mac.
@@ -50,11 +50,7 @@ if it will not start. To check by hand:
 | **F12** | Shows or hides the performance overlay in the top-left corner: frame rate and frame time, the resolution and whether MetalFX is upscaling, and memory use. |
 | **F9** | Switches between MetalFX upscaling and a plain stretch, to compare them. Only has an effect while the game renders below the window's size. |
 
-**On Mac keyboards, hold `fn` with these keys** (`fn`+`F12`, `fn`+`F9`). By default the top row controls
-brightness, media and volume, and only sends F1-F12 while `fn` is held. The `fn` key carries a globe icon: it is at the
-bottom-left of laptop and compact keyboards, and above the arrow keys on keyboards with a numeric keypad.
-If you have turned on *Use F1, F2, etc. keys as standard function keys* in System Settings > Keyboard, press the keys
-on their own. All other controls are the game's own and can be changed in its options menu.
+**On Mac keyboards, hold `fn` with these keys** (`fn`+`F12`, `fn`+`F9`).
 
 ## Known limitations
 - Occasional short hitches, mostly while shaders compile or a level loads.
