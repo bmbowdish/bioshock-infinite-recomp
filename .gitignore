@@ -85,3 +85,6 @@ gh_out.txt
 gh_push.sh
 sysload.sh
 sysload_out.txt
+clone_test/
+clone_test.sh
+clone_test_out.txt
