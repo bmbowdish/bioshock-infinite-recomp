@@ -1,0 +1,64 @@
+# This repo holds the port's own source: the mac32 runtime/tools, the game glue (game32.c), the function-start list,
+# build scripts and notes. It must never contain the game itself or anything translated from it.
+
+# --- game files and code generated from the game binary ---
+orig*.bin
+gen/
+gen2/
+*_saved_patches/
+shaders/
+shaders_run/
+XEngine.ini*
+hle_dump*/
+
+# --- build output ---
+build/
+*.o
+*.a
+build.log
+bundle.log
+
+# --- run output, logs, captures ---
+logs/
+shots/
+diag/
+*.png
+run_out.txt
+apptest_*.txt
+host_sample.txt
+lldb_out.txt
+probe_out.txt
+events_*.txt
+mf.txt
+sample_status.txt
+sample_now.done
+
+# --- build-loop state ---
+trigger
+loop_env
+loop_log.txt
+loop_status.txt
+progress_stage.json
+progress_history.json
+
+# --- backups and scratch ---
+*.bak
+*.bak[0-9]*
+*.bak_*
+*.orig
+starts_*next.txt
+new_starts*.txt
+
+# --- tooling ---
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+git_out.txt
+git_msg.txt
+
+# --- local working notes and assistant hand-off files (never published) ---
+fable_*
+FABLE_*
+progress_notes.json
+git_squash*

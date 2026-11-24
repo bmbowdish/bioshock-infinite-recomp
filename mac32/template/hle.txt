@@ -1,0 +1,4 @@
+# Guest functions replaced by native ones: "address name [outside]" per line (hex address, then the name of an
+# H_<name> function in game32.c or the runtime). "outside": only when the address is outside TEXT_LO..TEXT_HI.
+# Example: the engine's swap-buffers call
+# 31b409 RenderPresent
