@@ -1,0 +1,16 @@
+# Claude Fable - 2026-11-24: one statement per line, 120 columns, 4-space indent. Run with: echo format > trigger
+BasedOnStyle: LLVM
+IndentWidth: 4
+ColumnLimit: 120
+SortIncludes: Never          # include order matters here (GL headers and their guard macros)
+ReflowComments: false        # leave comment text and tables exactly as written
+PointerAlignment: Right
+BreakBeforeBraces: Attach
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Never
+AllowShortCaseLabelsOnASingleLine: false
+AlignTrailingComments: true
+AlignConsecutiveMacros: true
+IndentCaseLabels: false

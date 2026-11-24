@@ -62,3 +62,6 @@ fable_*
 FABLE_*
 progress_notes.json
 git_squash*
+format_out.txt
+format_mode
+format_hash_*.txt
