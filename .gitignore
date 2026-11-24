@@ -80,3 +80,6 @@ scan_code_refs.py
 sample.sh
 show.sh
 zip_app.sh
+gh_check.sh
+gh_out.txt
+gh_push.sh
