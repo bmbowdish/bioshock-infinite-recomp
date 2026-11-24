@@ -14,7 +14,8 @@ APP="build/$NAME.app"
 [ -d "$APP" ] || { echo "no app bundle produced"; stage "Bundle failed" 1; exit 1; }
 python3 bundle_dylibs.py "$APP" "$APP/Contents/MacOS/BioShock3" 2>&1 | cut -c1-600
 ls -la "$APP/Contents/Resources/" | cut -c1-120; touch "$APP"
-# Zip for sending to another Mac (ditto keeps the bundle's signature and symlinks intact).
+# Zip for moving the app to another Mac of your own (ditto keeps the signature and symlinks intact).
+# The app contains code translated from the game: it is for personal use, not for redistribution.
 ditto -c -k --sequesterRsrc --keepParent "$APP" "build/$NAME.zip" && ls -la "build/$NAME.zip" | cut -c1-120
 du -sh "$APP" | cut -c1-80
 stage "Idle" 0

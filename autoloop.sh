@@ -1,7 +1,7 @@
 #!/bin/bash
 # Leave this running in one Terminal window. Claude writes "rebuild" or "regen" into the file `trigger`;
 # this script runs that, then writes the result to `loop_status.txt`. Ctrl+C to stop.
-cd "$HOME/Downloads/bioshock-infinite-recomp" || exit 1
+cd "$(dirname "$0")" || exit 1
 echo "autoloop running. Waiting for triggers... (Ctrl+C to stop)"
 while true; do
   if [ -f trigger ]; then

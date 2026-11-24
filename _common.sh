@@ -1,9 +1,16 @@
 #!/bin/bash
 # Shared helpers for regen.sh / rebuild.sh (sourced, not run directly).
-PROJ="$HOME/Downloads/bioshock-infinite-recomp"
-FW="$PROJ"   # Claude Fable - 2026-11-24: the mac32 framework is now ./mac32 in this repo (was ~/Downloads/Recomp-Framework-main)
-GAME="$HOME/Library/Application Support/Steam/steamapps/common/BioShock Infinite/BioShock3.app/Contents"
+# Claude Fable - 2026-11-24: everything is relative to where this repository was cloned (it used to assume ~/Downloads).
+PROJ="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FW="$PROJ"   # the mac32 recompiler + runtime live in ./mac32
 cd "$PROJ" || { echo "project folder not found: $PROJ"; exit 1; }
+# The user's own copy of the game. setup.sh makes orig.bin a link to its executable; everything else is found from
+# that link, so a copy outside the default Steam folder works too.
+GAME="$HOME/Library/Application Support/Steam/steamapps/common/BioShock Infinite/BioShock3.app/Contents"
+if [ -L orig.bin ]; then
+  _exe="$(readlink orig.bin)"; [ -d "$(dirname "$_exe")/../Resources" ] && GAME="$(cd "$(dirname "$_exe")/.." && pwd)"
+fi
+[ -f .venv/bin/activate ] || { echo "Python environment missing: run ./setup.sh first"; exit 1; }
 source .venv/bin/activate
 
 # Tell the progress widget what we're doing: stage "Building"   or   stage "Idle" 134

@@ -83,3 +83,5 @@ zip_app.sh
 gh_check.sh
 gh_out.txt
 gh_push.sh
+sysload.sh
+sysload_out.txt
