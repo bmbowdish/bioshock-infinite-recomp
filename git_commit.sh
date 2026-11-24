@@ -9,6 +9,7 @@ git config user.email >/dev/null || git config user.email "braden@localhost"
 if [ -f git_squash ]; then   # one-time: restart history as a single commit (flag file is removed by the next line)
   mv git_squash git_squash.done; git update-ref -d HEAD; git rm -r -q -f --cached . >/dev/null 2>&1
 fi
+git rm -r -q -f --cached . >/dev/null 2>&1   # rebuild the index so files newly listed in .gitignore stop being tracked
 git add -A
 echo "--- staged summary"; git diff --cached --stat | tail -3
 echo "--- largest staged files"; git diff --cached --name-only | while read -r f; do [ -f "$f" ] && echo "$(stat -f%z "$f") $f"; done | sort -rn | head -12

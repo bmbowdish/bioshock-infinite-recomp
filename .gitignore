@@ -65,3 +65,18 @@ git_squash*
 format_out.txt
 format_mode
 format_hash_*.txt
+
+# --- one-off patch scripts and investigation tools: kept locally, not part of the port ---
+audio_patch.py
+carbon_patch.py
+hid_patch.py
+mouse_patch.py
+annot.py
+bsdis.py
+objc_dump.py
+probe.sh
+probe_defs.py
+scan_code_refs.py
+sample.sh
+show.sh
+zip_app.sh

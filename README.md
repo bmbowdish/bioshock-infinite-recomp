@@ -19,7 +19,7 @@ Everything derived from the game binary (`orig*.bin`, `gen*/`, shaders, builds) 
 ## Build
 The scripts expect the project at `~/Downloads/bioshock-infinite-recomp` and the game installed through Steam.
 `echo rebuild > trigger` builds and runs for 60 s; `build_only` compiles only; `freeplay` runs until you quit;
-`bundle` makes `build/BioShockInfiniteRecomp.app`; `regen` re-translates the game (slow).
+`bundle` makes `build/BioShockInfiniteRecomp.app` and a `.zip` of it; `regen` re-translates the game (slow).
 
 ## Controls added by the port
 fn+F12 performance overlay · fn+F9 MetalFX upscaling on/off (active when the game renders below the window size).
