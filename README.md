@@ -59,7 +59,7 @@ if it will not start. To check by hand:
 | `starts.txt` | Extra function-start addresses for the translator. Bad entries cause real bugs: see `STARTS_AUDIT.md`. |
 | `hle.txt` | Functions replaced by host implementations. |
 | `setup.sh`, `build_app.sh` | The two commands above. |
-| other `*.sh` | Development loop: `autoloop.sh` watches a `trigger` file and runs the named script (`rebuild`, `regen`, `build_only`, `freeplay`, `bundle`, `format`). |
+| other `*.sh` | Development scripts: `rebuild.sh` (compile and run), `regen.sh` (re-translate, compile, run), `build_only.sh`, `freeplay.sh` (run until you quit), `bundle.sh`, `format.sh`. |
 
 ## Licence
 The port's own source is under the MIT licence (`LICENSE`). `mac32/` is derived from Recomp-Framework, also MIT, and

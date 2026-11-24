@@ -1,4 +1,4 @@
-# Claude Fable - 2026-11-24: one statement per line, 120 columns, 4-space indent. Run with: echo format > trigger
+# Claude Fable - 2026-11-24: one statement per line, 120 columns, 4-space indent. Run with: ./format.sh apply
 BasedOnStyle: LLVM
 IndentWidth: 4
 ColumnLimit: 120

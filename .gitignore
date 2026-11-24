@@ -33,7 +33,7 @@ mf.txt
 sample_status.txt
 sample_now.done
 
-# --- build-loop state ---
+# --- local run state ---
 trigger
 loop_env
 loop_log.txt
@@ -88,3 +88,8 @@ sysload_out.txt
 clone_test/
 clone_test.sh
 clone_test_out.txt
+
+# --- the maintainer's local automation (not needed to build or run the port) ---
+autoloop.sh
+progress_server.py
+git_commit.sh
