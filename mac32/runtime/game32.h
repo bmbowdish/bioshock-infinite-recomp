@@ -15,6 +15,11 @@ typedef struct {
     const char *support_dir;  // ~/Library/Application Support/<support_dir>: offline Steam stats and achievements
     const char *log_name;     // ~/Library/Logs/<log_name>.log
     int width, height;        // initial window size in points
+    // Claude Fable - 2026-11-24: the exact build of the game this port was generated from. The translated code and every
+    // hard-coded address only fit that one executable, so the host refuses to start with any other (see
+    // check_game_binary in host.m). NULL exe_sha256 = no check.
+    const char *exe_sha256;  // lowercase hex SHA-256 of <app_bundle>/Contents/MacOS/<exe_name>
+    const char *exe_version; // human-readable name of that build, shown when the check fails
 } Rt32Game;
 
 extern const Rt32Game rt32_game;

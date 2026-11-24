@@ -490,9 +490,9 @@ void I__localeconv(CPU *c) {
         RETF(fn(ARGF(0)));                                                                                             \
     }
 F1(floorf, floorf)
-F1(ceilf, ceilf) F1(sinf, sinf) F1(cosf, cosf) F1(tanf, tanf) F1(asinf, asinf) F1(acosf, acosf) F1(atanf, atanf)
-    F1(sinhf, sinhf) F1(coshf, coshf) F1(tanhf, tanhf) F1(expf, expf) F1(logf, logf)
-        F1(log10f, log10f) void I__pow(CPU *c) {
+F1(ceilf, ceilf)
+F1(sinf, sinf) F1(cosf, cosf) F1(tanf, tanf) F1(asinf, asinf) F1(acosf, acosf) F1(atanf, atanf) F1(sinhf, sinhf)
+    F1(coshf, coshf) F1(tanhf, tanhf) F1(expf, expf) F1(logf, logf) F1(log10f, log10f) void I__pow(CPU *c) {
     RETF(pow(ARGD(0), ARGD(2)));
 }
 void I__fmod(CPU *c) {

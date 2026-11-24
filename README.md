@@ -7,6 +7,18 @@ libraries (Carbon, CoreFoundation handles, OpenGL, Bink, FMOD, Steam).
 **This repository contains no game code or data.** You need your own installed copy of the game (Steam).
 Everything derived from the game binary (`orig*.bin`, `gen*/`, shaders, builds) is git-ignored.
 
+## Supported game version
+The port fits **one exact build** of the game: the Steam Mac release (Aspyr), executable
+`BioShock3.app/Contents/MacOS/BioShock3`, 43,656,724 bytes, SHA-256
+`ed65b2c936d8b4d92a851e7bb676cfc0e9f9e88617564263d62651c2f68ce74b`.
+
+The translated code, `starts.txt`, `hle.txt` and the addresses in `game32.c` are positions inside that file, so they
+are the same for everyone who has that build and wrong for anyone who has another (a different store's version or
+a different patch). Two checks enforce this: `regen.sh` refuses to translate a different executable, and the app
+refuses to start with one and says why. To check your copy:
+
+    shasum -a 256 ~/Library/Application\ Support/Steam/steamapps/common/BioShock\ Infinite/BioShock3.app/Contents/MacOS/BioShock3
+
 ## Layout
 | Path | What it is |
 |---|---|

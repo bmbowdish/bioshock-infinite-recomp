@@ -2,6 +2,7 @@
 # Full loop (~3 min): regenerate the C from the game binary (after changing the translator or starts.txt), rebuild, run.
 source "$(dirname "$0")/_common.sh"
 ensure_widget
+check_game_binary || { stage "Wrong game version" 1; exit 1; }
 stage "Regenerating code"
 rm -rf gen2
 RECOMP_EXTRA_STARTS=starts.txt python3 "$FW/mac32/tools/recomp32.py" orig.bin 2cd0 13ec120 gen2 --hle hle.txt 2>&1 | grep -v "^UNSUPPORTED" | tail -2

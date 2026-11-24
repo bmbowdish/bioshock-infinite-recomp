@@ -36,7 +36,7 @@ static void vcall(CPU *c, uint32_t ctx) {
     if (iface == 0 && slot == 1) {
         RET(1);
         return;
-    }                              // ISteamUser::BLoggedOn
+    } // ISteamUser::BLoggedOn
     if (iface == 0 && slot == 2) { // ISteamUser::GetSteamID: 64-bit CSteamID in edx:eax,
         c->eax = 0x00000001u;
         c->edx = 0x01100001u; // the same user the stats callback (1101) reports
@@ -52,7 +52,7 @@ static void vcall(CPU *c, uint32_t ctx) {
     if (iface == 3 && slot == 9) {
         RET(app_id);
         return;
-    }                 // ISteamUtils::GetAppID
+    } // ISteamUtils::GetAppID
     if (iface == 2) { // ISteamUserStats
         const char *name = ARG(1) ? (const char *)G2H(ARG(1)) : "";
         switch (slot) {

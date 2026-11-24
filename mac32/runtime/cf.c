@@ -3379,7 +3379,7 @@ void I__AUGraphAddNode(CPU *c) {
     if (ARG(2))
         wr32(ARG(2), aug_next++);
     RET(0);
-}                                 // (graph, desc*, AUNode *out)
+} // (graph, desc*, AUNode *out)
 void I__AUGraphNodeInfo(CPU *c) { // (graph, node, AudioComponentDescription *outDesc, AudioUnit *outUnit)
     if (ARG(2))
         memset(G2H(ARG(2)), 0, 20);

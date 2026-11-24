@@ -21,6 +21,21 @@ ensure_widget() {
   fi
 }
 
+# Claude Fable - 2026-11-24: the port only fits one exact build of the game (see GAME_EXE_SHA256 in game32.c). Refuse to
+# translate any other executable: it would produce a program that starts and then fails in confusing ways.
+check_game_binary() {
+  local want got
+  want=$(grep '#define GAME_EXE_SHA256' game32.c | grep -o '[0-9a-f]\{64\}')
+  [ -n "$want" ] || { echo "version check: GAME_EXE_SHA256 not found in game32.c"; return 1; }
+  [ -r orig.bin ] || { echo "version check: orig.bin is missing (it should point at the game's executable, Contents/MacOS/BioShock3)"; return 1; }
+  got=$(shasum -a 256 orig.bin | cut -d' ' -f1)
+  if [ "$got" = "$want" ]; then echo "version check: game executable matches ($(echo "$got" | cut -c1-16)...)"; return 0; fi
+  echo "version check FAILED: orig.bin is not the build this port was made for"
+  echo "  expected sha256 $want"
+  echo "  found    sha256 $got"
+  return 1
+}
+
 build() {
   stage "Building"
   make -k -j"$(sysctl -n hw.ncpu)" app > build.log 2>&1

@@ -21,6 +21,11 @@
 #include "game32.h"
 #include "tables.h"
 
+// Claude Fable - 2026-11-24: the one build of the game this port fits (Steam, Mac, Aspyr; executable BioShock3, 43,656,724 bytes).
+// starts.txt, hle.txt and every address in this file are positions inside that executable. regen.sh checks the
+// user's copy against this before translating, and the app checks it again at launch.
+#define GAME_EXE_SHA256 "ed65b2c936d8b4d92a851e7bb676cfc0e9f9e88617564263d62651c2f68ce74b"
+
 const Rt32Game rt32_game = {
     .name = "BioShock Infinite",
     .app_bundle = "BioShock3.app",
@@ -31,6 +36,8 @@ const Rt32Game rt32_game = {
     .log_name = "BioShock3-recomp",
     .width = 1280,
     .height = 720,
+    .exe_sha256 = GAME_EXE_SHA256,
+    .exe_version = "BioShock Infinite for Mac (Aspyr), Steam build",
 };
 
 #define ENGINE_LOOP 0x1bdd0f8u
@@ -197,7 +204,7 @@ int game32_start(CPU *c) {
         uint64_t ram = 0;
         size_t rl = sizeof ram;
         sysctlbyname("hw.memsize", &ram, &rl, NULL, 0);
-        if (getenv("RT32_SIM_RAM_MB"))   // testing: pretend the Mac has this much memory
+        if (getenv("RT32_SIM_RAM_MB")) // testing: pretend the Mac has this much memory
             ram = (uint64_t)atoll(getenv("RT32_SIM_RAM_MB")) << 20;
         const char *f = getenv("RT32_TEXPOOL_MB");
         // Claude Fable - 2026-11-24 (revised): pick the pool by installed memory, using the ini value as a floor.
