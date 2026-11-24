@@ -44,6 +44,11 @@ if it will not start. To check by hand:
 - **Upscaling:** when the game renders below the window's size, the picture is enlarged with Apple's MetalFX.
 - The log is written to `~/Library/Logs/BioShock3-recomp.log`.
 
+### Controllers
+Xbox, PlayStation and Switch Pro controllers work, wired or over Bluetooth, through Apple's GameController
+framework: connect the controller before or while the game is running and it is picked up automatically.
+Tested with an Xbox controller. Rumble is not implemented yet.
+
 ### Keys added by the port
 | Key | What it does |
 |---|---|
@@ -55,6 +60,7 @@ if it will not start. To check by hand:
 ## Known limitations
 - Occasional short hitches, mostly while shaders compile or a level loads.
 - The game's volume sliders do not affect video sound.
+- Controllers do not rumble yet.
 - Tested on a small number of Macs. Reports are welcome.
 
 ## Layout

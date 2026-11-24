@@ -44,3 +44,15 @@ void game32_modifier(CPU *c, int which, int down);             // 0 shift, 1 con
 void host_present(void);              // swap buffers (call from the engine's present)
 void host_show_cursor(int show);      // the game shows/hides the system pointer over its view
 const char *host_resources_dir(void); // <app_bundle>/Contents/Resources of the user's copy (also the cwd)
+
+// Claude Fable - 2026-11-24: game controllers (pad.m, Apple's GameController framework). State is in XInput's layout, which is
+// what Windows-derived games read: buttons = XINPUT_GAMEPAD_* bits, triggers 0..255, sticks -32768..32767 (up and
+// right positive), packet = a counter that changes whenever anything else does.
+typedef struct {
+    uint32_t packet;
+    uint16_t buttons;
+    uint8_t lt, rt;
+    int16_t lx, ly, rx, ry;
+} Rt32Pad;
+int host_pad_read(int index, Rt32Pad *out);            // slot 0..3; returns 1 and fills *out if a controller is there
+int host_pad_rumble(int index, float low, float high); // motor strengths 0..1; returns 1 if a controller is there

@@ -3,3 +3,7 @@
 # Example: the engine's swap-buffers call
 # 31b409 RenderPresent
 5a08b MsgBox
+# Claude Fable - 2026-11-24: the game's own controller layer (a stand-in for Windows' XInput that talks to USB/HID devices
+# directly). Replaced by the host's GameController support; see H_XInputGetState in game32.c.
+82b45 XInputGetState
+82cd6 XInputSetState

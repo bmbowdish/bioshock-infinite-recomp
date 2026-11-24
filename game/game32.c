@@ -120,6 +120,7 @@ static void dump_loc_globals(const char *tag) { // Localize() bails out early if
             rd32(0x1bdf720u), rd32(0x1bdf738u));
 }
 int game32_start(CPU *c) {
+    host_pad_read(0, NULL); // Claude Fable - 2026-11-24: start watching for controllers before the engine first asks
     // The engine builds its base directory from getcwd() + "Binaries/Win32" (UE3 convention) and finds XGame/Config two levels up.
     // Aspyr's data lives in <app>/Contents/GameData, so that is the working directory the game expects. ⚠ inferred, not verified.
     {
@@ -298,6 +299,42 @@ void game32_modifier(CPU *c, int which, int down) {
 // Args as the guest passes them: (?, message, secondary text/button, flags). ⚠ Meaning of arg0 and the return value is a guess.
 static const char *gstr(uint32_t a) {
     return (a > 0x1000 && a < 0xF0000000u) ? (const char *)G2H(a) : "(not a string)";
+}
+// Claude Fable - 2026-11-24: controllers. The Mac port carries its own copy of Windows' XInput: 0x82b45 is
+// XInputGetState(index, XINPUT_STATE *) and 0x82cd6 is XInputSetState(index, XINPUT_VIBRATION *). The originals find
+// Xbox 360 / PS3 pads by talking to USB and HID devices through 2013 system interfaces that the runtime does not
+// provide (they were answered "no devices", so no controller ever appeared). hle.txt replaces both functions with
+// the two below, which answer from the host's controller support (mac32/runtime/pad.m) instead. The engine calls
+// GetState for each of the four slots; 0x48F is Windows' ERROR_DEVICE_NOT_CONNECTED.
+// XINPUT_STATE layout: +0 packet number, +4 buttons, +6 left trigger, +7 right trigger, +8 LX, +10 LY, +12 RX, +14 RY.
+void H_XInputGetState(CPU *c) {
+    uint32_t idx = ARG(0), st = ARG(1);
+    Rt32Pad p;
+    static int polled, answered; // one log line each, so the log shows the engine really reads controllers here
+    if (!polled++)
+        fprintf(stderr, "[pad] the game is polling controllers (first call: slot %u)\n", idx);
+    if (!st || !host_pad_read((int)idx, &p)) {
+        c->eax = 0x48F;
+        return;
+    }
+    if (!answered++)
+        fprintf(stderr, "[pad] first controller state handed to the game (slot %u)\n", idx);
+    wr32(st, p.packet);
+    wr16(st + 4, p.buttons);
+    wr8(st + 6, p.lt);
+    wr8(st + 7, p.rt);
+    wr16(st + 8, (uint16_t)p.lx);
+    wr16(st + 10, (uint16_t)p.ly);
+    wr16(st + 12, (uint16_t)p.rx);
+    wr16(st + 14, (uint16_t)p.ry);
+    c->eax = 0;
+}
+// XINPUT_VIBRATION: +0 left (low-frequency) motor 0..65535, +2 right (high-frequency) motor 0..65535.
+void H_XInputSetState(CPU *c) {
+    uint32_t idx = ARG(0), vb = ARG(1);
+    float lo = vb ? (float)(rd32(vb) & 0xFFFF) / 65535.0f : 0,
+          hi = vb ? (float)((rd32(vb) >> 16) & 0xFFFF) / 65535.0f : 0;
+    c->eax = host_pad_rumble((int)idx, lo, hi) ? 0 : 0x48F;
 }
 void H_MsgBox(CPU *c) {
     fprintf(stderr, "[ALERT] arg0=0x%x\n[ALERT] msg : %.600s\n[ALERT] arg2: %.200s\n[ALERT] flags=0x%x\n", ARG(0),

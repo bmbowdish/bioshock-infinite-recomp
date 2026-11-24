@@ -45,7 +45,7 @@ FFMPEG_LIBS   := $(shell pkg-config --libs libavcodec libavformat libavutil 2>/d
 ifneq ($(FFMPEG_LIBS),)
 FFMPEG_CFLAGS += -DHAVE_FFMPEG
 endif
-RT_OBJ  = $(patsubst %.c,$(BUILD)/m32/%.o,$(M32_RT)) $(BUILD)/m32/host.o $(BUILD)/gl_gen.o
+RT_OBJ  = $(patsubst %.c,$(BUILD)/m32/%.o,$(M32_RT)) $(BUILD)/m32/host.o $(BUILD)/m32/pad.o $(BUILD)/gl_gen.o
 GAME_OBJ = $(patsubst %.c,$(BUILD)/game/%.o,$(GAME_SRC))
 M32_HDR = $(wildcard $(M32)/runtime/*.h)
 
@@ -62,6 +62,10 @@ $(BUILD)/m32/bink.o: CFLAGS += $(FFMPEG_CFLAGS)
 $(BUILD)/m32/host.o: $(M32)/runtime/host.m $(M32_HDR)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -fobjc-arc -c $< -o $@
+# Claude Fable - 2026-11-24: game controllers (GameController framework)
+$(BUILD)/m32/pad.o: $(M32)/runtime/pad.m $(M32_HDR)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -fobjc-arc -c $< -o $@
 $(BUILD)/gl_gen.o: $(BUILD)/gl_gen.c $(M32_HDR)
 	$(CC) $(CFLAGS) -c $< -o $@
 $(BUILD)/game/%.o: %.c $(M32_HDR)
@@ -75,7 +79,8 @@ $(BUILD)/libgame32.a: $(GEN_OBJ)
 # with MACOS_MIN below 13 the linker weak-links it and host.m checks @available before using it.
 FRAMEWORKS = -framework CoreFoundation -framework ApplicationServices -framework Cocoa -framework Carbon -framework OpenGL \
              -framework AudioToolbox -framework CoreAudio \
-             -framework Metal -framework MetalFX -framework IOSurface -framework QuartzCore
+             -framework Metal -framework MetalFX -framework IOSurface -framework QuartzCore \
+             -framework GameController
 $(BUILD)/$(APP_NAME): $(BUILD)/libgame32.a $(RT_OBJ) $(GAME_OBJ)
 	$(CC) $(CFLAGS) $(RT_OBJ) $(GAME_OBJ) $(BUILD)/libgame32.a -lz -lc++ $(FFMPEG_LIBS) $(FRAMEWORKS) -o $@
 app: $(BUILD)/$(APP_NAME)

@@ -2053,13 +2053,65 @@ static uint32_t empty_dict(void) {
     return handle_for(
         CFDictionaryCreateMutable(NULL, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks));
 }
+// Claude Fable - 2026-11-24: controller support, step 1 = find out what the game asks IOKit for. These calls used to answer
+// silently; they now log who asked and for what (first 12 of each), and the matching dictionaries carry the class or
+// name like the real ones do, so a later dump of the dictionary shows the complete question (vendor/product ids ...).
+static const char *io_caller(CPU *c) {
+    return rt_func_name(rd32(C.esp));
+}
+static int io_log_ok(int *n) {
+    return (*n)++ < 12;
+}
+static void io_log_cf(const char *what, uint32_t h) {
+    CFTypeRef o = h ? cf(h) : NULL;
+    char b[900] = "(null)";
+    if (o) {
+        CFStringRef d = CFCopyDescription(o);
+        if (d) {
+            CFStringGetCString(d, b, sizeof b, kCFStringEncodingUTF8);
+            CFRelease(d);
+        }
+    }
+    for (char *q = b; *q; q++)
+        if (*q == '\n')
+            *q = ' ';
+    fprintf(stderr, "[iokit]   %s: %s\n", what, b);
+}
+static uint32_t matching_dict(const char *key, const char *val) {
+    CFMutableDictionaryRef d =
+        CFDictionaryCreateMutable(NULL, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+    CFStringRef k = CFStringCreateWithCString(NULL, key, kCFStringEncodingUTF8),
+                v = CFStringCreateWithCString(NULL, val ? val : "", kCFStringEncodingUTF8);
+    if (k && v)
+        CFDictionarySetValue(d, k, v);
+    if (k)
+        CFRelease(k);
+    if (v)
+        CFRelease(v);
+    return handle_for(d);
+}
 void I__IOServiceMatching(CPU *c) {
-    RET(empty_dict());
+    const char *nm = ARG(0) ? (const char *)G2H(ARG(0)) : "";
+    static int n;
+    if (io_log_ok(&n))
+        fprintf(stderr, "[iokit] IOServiceMatching(\"%s\") from %s\n", nm, io_caller(c));
+    RET(matching_dict("IOProviderClass", nm));
 }
 void I__IOServiceNameMatching(CPU *c) {
-    RET(empty_dict());
+    const char *nm = ARG(0) ? (const char *)G2H(ARG(0)) : "";
+    static int n;
+    if (io_log_ok(&n))
+        fprintf(stderr, "[iokit] IOServiceNameMatching(\"%s\") from %s\n", nm, io_caller(c));
+    RET(matching_dict("IONameMatch", nm));
 }
 void I__IOServiceGetMatchingServices(CPU *c) {
+    {
+        static int n;
+        if (io_log_ok(&n)) {
+            fprintf(stderr, "[iokit] IOServiceGetMatchingServices from %s\n", io_caller(c));
+            io_log_cf("matching", ARG(1));
+        }
+    }
     cf_release_h(ARG(1));
     if (ARG(2))
         wr32(ARG(2), 0);
@@ -2081,6 +2133,10 @@ void I__IORegistryEntryCreateCFProperties(CPU *c) {
     RET(IORET_ERROR);
 }
 void I__IORegistryEntryFromPath(CPU *c) {
+    static int n;
+    if (io_log_ok(&n))
+        fprintf(stderr, "[iokit] IORegistryEntryFromPath(\"%s\") from %s\n", ARG(1) ? (const char *)G2H(ARG(1)) : "",
+                io_caller(c));
     RET(0);
 }
 void I__IORegistryEntryGetChildEntry(CPU *c) {
@@ -2096,6 +2152,14 @@ void I__IOServiceAddMatchingNotification(CPU *c) { // (port, type, matching, cal
     // Claude Fable - 2026-11-24: this returned an error, so the game's USB-device watcher (sub_5bd36f) retried forever, and each
     // retry leaked its matching dictionary (the real call consumes one reference). Now: consume the reference and report
     // "registered, nothing matched" (empty iterator), like a Mac with no such device plugged in.
+    {
+        static int n;
+        if (io_log_ok(&n)) {
+            fprintf(stderr, "[iokit] IOServiceAddMatchingNotification(type \"%s\", callback %s) from %s\n",
+                    ARG(1) ? (const char *)G2H(ARG(1)) : "", rt_func_name(ARG(3)), io_caller(c));
+            io_log_cf("matching", ARG(2));
+        }
+    }
     cf_release_h(ARG(2));
     if (ARG(5))
         wr32(ARG(5), 0);
@@ -2110,6 +2174,12 @@ void I__IONotificationPortGetRunLoopSource(CPU *c) {
     RET(0);
 }
 void I__IOCreatePlugInInterfaceForService(CPU *c) {
+    static int n;
+    if (io_log_ok(&n)) {
+        fprintf(stderr, "[iokit] IOCreatePlugInInterfaceForService(service 0x%x) from %s\n", ARG(0), io_caller(c));
+        io_log_cf("plug-in type", ARG(1));
+        io_log_cf("interface type", ARG(2));
+    }
     RET(IORET_ERROR);
 }
 void I__IODestroyPlugInInterface(CPU *c) {
@@ -2211,6 +2281,11 @@ void I__IOHIDManagerScheduleWithRunLoop(CPU *c) {
 void I__IOHIDManagerUnscheduleFromRunLoop(CPU *c) {
 }
 void I__IOHIDManagerSetDeviceMatchingMultiple(CPU *c) {
+    static int n;
+    if (io_log_ok(&n)) {
+        fprintf(stderr, "[hid] IOHIDManagerSetDeviceMatchingMultiple from %s\n", io_caller(c));
+        io_log_cf("device types asked for", ARG(1));
+    }
 }
 void I__IOHIDValueGetElement(CPU *c) {
     RET((ARG(0) & 0xFF000000u) == HID_VAL ? HID_ELEM | (ARG(0) & 255) : 0);
