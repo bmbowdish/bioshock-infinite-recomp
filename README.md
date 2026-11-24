@@ -43,6 +43,9 @@ if it will not start. To check by hand:
 - **Resolution and Fullscreen** are set in the game's own graphics menu; HiDPI displays offer their full pixel sizes.
 - **Upscaling:** when the game renders below the window's size, the picture is enlarged with Apple's MetalFX.
 - The log is written to `~/Library/Logs/BioShock3-recomp.log`.
+- **Performance data:** the log records, every 100 frames, how long the GPU worked on a frame, how much CPU time
+  went into OpenGL calls, how long the game waited for the display, and how even the frame pacing was; every hitch
+  is logged with what it coincided with. `python3 scripts/summarize_log.py <log>` prints a summary.
 
 ### Controllers
 Xbox, PlayStation and Switch Pro controllers work, wired or over Bluetooth, through Apple's GameController
@@ -69,7 +72,7 @@ Tested with an Xbox controller. Rumble is not implemented yet.
 | `setup.sh`, `build_app.sh` | The two commands above. |
 | `game/` | Everything specific to this game: `game32.c` (engine start-up, resolution and fullscreen hooks, texture pool, supported build), `starts.txt` (extra function-start addresses for the translator) and `hle.txt` (functions replaced by host implementations). |
 | `mac32/` | The recompiler and runtime, from NightSightProductions' Recomp-Framework `mac32` target (MIT, see `mac32/LICENSE`), with this project's changes. `tools/recomp32.py` translates i386 to C; `runtime/` is the host side. |
-| `scripts/` | Development scripts: `rebuild.sh` (compile and run), `regen.sh` (re-translate, compile, run), `build_only.sh`, `freeplay.sh` (run until you quit), `bundle.sh`, `format.sh`. |
+| `scripts/` | Development scripts: `rebuild.sh` (compile and run), `regen.sh` (re-translate, compile, run), `build_only.sh`, `freeplay.sh` (run until you quit), `bundle.sh`, `format.sh`, and `benchmark.sh` (an unattended measurement run; `summarize_log.py` turns any run log into a short performance summary). |
 | `docs/` | `STARTS_AUDIT.md`: how bad entries in `starts.txt` caused real crashes, and how the list was audited. |
 | `Makefile`, `requirements.txt`, `.clang-format` | Build settings, the translator's Python packages, and the code style. |
 

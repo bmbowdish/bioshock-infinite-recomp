@@ -377,6 +377,10 @@ int host_mfx_blit(int sx0, int sy0, int sx1, int sy1, int dx0, int dy0, int dx1,
                 // that waiting is the display's pacing, not work, so it is timed separately (t1..t2).
                 id<CAMetalDrawable> dr = [mfx_layer nextDrawable];
                 uint64_t t2 = mach_absolute_time();
+                {
+                    extern volatile uint64_t host_probe_wait_ticks;
+                    host_probe_wait_ticks += t2 - t1; // frame probe: time spent waiting for the display
+                }
                 if (dr) {
                     id<MTLFXSpatialScaler> s = mfx_scaler;
                     id<MTLCommandBuffer> cb = [mfx_q commandBuffer];
@@ -484,6 +488,123 @@ static void mfx_make_view(NSView *parent) { // main thread, at window creation
     mfx_view.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     mfx_view.hidden = YES;
     [parent addSubview:mfx_view];
+}
+
+// ---- frame probe (Claude Fable - 2026-11-24): where each frame's time goes ----
+// Answers "is a slow or uneven frame the GPU, the driver, or waiting for the display?" with four numbers per frame:
+//   GPU        time the GPU spent on the frame (an OpenGL timer query around everything between two presents;
+//              the result arrives a frame late, which is fine for averages)
+//   GL calls   CPU time the render thread spent inside OpenGL calls (the driver's share of the CPU work)
+//   wait       time blocked in the buffer swap / waiting for a drawable (that is the display's pacing, not work)
+//   interval   time between presents, sorted into refresh-sized buckets to show how even the pacing is
+// Printed as one "[frame]" line per 100 frames, and a "[hitch+]" line after each "[hitch]" line naming the slowest
+// single GL call. RT32_NO_GPU_TIME=1 leaves the timer query out (the other numbers stay).
+volatile float host_gpu_ms;              // latest GPU frame time, for the overlay
+volatile uint64_t host_probe_wait_ticks; // added to by whoever blocks for the display (swap, nextDrawable)
+static GLuint probe_q[2];
+static int probe_q_active = -1, probe_q_state = 0; // state: 0 untested, 1 working, -1 unavailable
+static int probe_q_ended[2];
+static struct {
+    int n, gpu_n, b[4];
+    double dt, gpu, gpu_max, gl, wait;
+} probe_acc;
+static double probe_ms(uint64_t ticks) {
+    static mach_timebase_info_data_t tb;
+    if (!tb.denom)
+        mach_timebase_info(&tb);
+    return (double)ticks * tb.numer / tb.denom / 1e6;
+}
+// Render thread, just before the frame is shown.
+static void probe_before_swap(int present) {
+    extern volatile uint64_t gl_ticks_total, gl_slow_ticks;
+    extern const char *volatile gl_slow_name;
+    static uint64_t t_last, gl_last;
+    uint64_t now = mach_absolute_time();
+    if (probe_q_state == 0 && getenv("RT32_NO_GPU_TIME"))
+        probe_q_state = -1;
+    if (probe_q_state >= 0) {
+        if (!probe_q[0]) {
+            while (glGetError()) {
+            }
+            glGenQueries(2, probe_q);
+        }
+        if (probe_q_active >= 0) {
+            glEndQuery(GL_TIME_ELAPSED);
+            probe_q_ended[probe_q_active] = 1;
+        }
+        int other = probe_q_active < 0 ? 0 : 1 - probe_q_active;
+        if (probe_q_ended[other]) { // ended one present ago: its result should be ready
+            GLint ready = 0;
+            glGetQueryObjectiv(probe_q[other], GL_QUERY_RESULT_AVAILABLE, &ready);
+            if (ready) {
+                GLuint64 ns = 0;
+                glGetQueryObjectui64v(probe_q[other], GL_QUERY_RESULT, &ns);
+                double ms = (double)ns / 1e6;
+                host_gpu_ms = (float)ms;
+                probe_acc.gpu += ms;
+                probe_acc.gpu_n++;
+                if (ms > probe_acc.gpu_max)
+                    probe_acc.gpu_max = ms;
+            }
+            probe_q_ended[other] = 0;
+        }
+        if (probe_q_state == 0 && present > 30) { // decide once whether the driver really supports this
+            GLenum e = glGetError();
+            probe_q_state = (e == GL_NO_ERROR && probe_acc.gpu_n > 0) ? 1 : -1;
+            fprintf(stderr, "[frame] GPU timer query: %s (GL error 0x%x, %d results so far)\n",
+                    probe_q_state > 0 ? "working" : "NOT available, GPU time will not be reported", e, probe_acc.gpu_n);
+        }
+    }
+    if (t_last) {
+        double dt = probe_ms(now - t_last), gl = probe_ms(gl_ticks_total - gl_last),
+               wait = probe_ms(host_probe_wait_ticks), slow = probe_ms(gl_slow_ticks);
+        probe_acc.n++;
+        probe_acc.dt += dt;
+        probe_acc.gl += gl;
+        probe_acc.wait += wait;
+        probe_acc.b[dt <= 18.0 ? 0 : dt <= 27.0 ? 1 : dt <= 36.0 ? 2 : 3]++;
+        if (dt > 50.0)
+            fprintf(stderr,
+                    "[hitch+] present #%d: GL calls %.1f ms of CPU, slowest single call %s %.1f ms | waiting for the "
+                    "display %.1f ms | GPU (frame before) %.1f ms\n",
+                    present, gl, gl_slow_name, slow, wait, (double)host_gpu_ms);
+        if (probe_acc.n == 100) {
+            fprintf(stderr,
+                    "[frame] last 100 frames: interval %.1f ms | GPU avg %.1f max %.1f ms (%d samples) | GL calls %.1f "
+                    "ms CPU | waiting for the display %.1f ms | pacing: %d at <=18 ms, %d at 18-27, %d at 27-36, %d "
+                    "slower\n",
+                    probe_acc.dt / 100, probe_acc.gpu_n ? probe_acc.gpu / probe_acc.gpu_n : 0.0, probe_acc.gpu_max,
+                    probe_acc.gpu_n, probe_acc.gl / 100, probe_acc.wait / 100, probe_acc.b[0], probe_acc.b[1],
+                    probe_acc.b[2], probe_acc.b[3]);
+            {
+                extern volatile uint32_t gl_sh_new, gl_sh_repeat;
+                extern volatile uint64_t gl_sh_new_ticks, gl_sh_repeat_ticks;
+                static uint32_t n0, r0;
+                if (gl_sh_new != n0 || gl_sh_repeat != r0) { // only when something was compiled since the last line
+                    n0 = gl_sh_new;
+                    r0 = gl_sh_repeat;
+                    fprintf(stderr,
+                            "[shader] so far: %u first-time sources compiled in %.0f ms (%.2f ms each), %u repeats in "
+                            "%.0f ms (%.2f ms each)\n",
+                            n0, probe_ms(gl_sh_new_ticks), n0 ? probe_ms(gl_sh_new_ticks) / n0 : 0.0, r0,
+                            probe_ms(gl_sh_repeat_ticks), r0 ? probe_ms(gl_sh_repeat_ticks) / r0 : 0.0);
+                }
+            }
+            memset(&probe_acc, 0, sizeof probe_acc);
+        }
+    }
+    t_last = now;
+    gl_last = gl_ticks_total;
+    host_probe_wait_ticks = 0;
+    gl_slow_ticks = 0;
+}
+// Render thread, right after the frame was handed over: start timing the next one.
+static void probe_after_swap(void) {
+    if (probe_q_state < 0 || !probe_q[0])
+        return;
+    int next = probe_q_active < 0 ? 0 : 1 - probe_q_active;
+    glBeginQuery(GL_TIME_ELAPSED, probe_q[next]);
+    probe_q_active = next;
 }
 
 volatile int host_present_count;
@@ -749,15 +870,19 @@ void host_present(void) {
         extern void gl_frame_publish(void);
         gl_frame_publish();
     }
+    probe_before_swap(n);
     if (mfx_frame_presented) {
         mfx_frame_presented = 0;
         glFlush();
     } // this frame went out through the Metal layer
     else if (c) {
+        uint64_t w0 = mach_absolute_time();
         CGLLockContext(c);
         CGLFlushDrawable(c);
         CGLUnlockContext(c);
+        host_probe_wait_ticks += mach_absolute_time() - w0;
     } // serialised with main-thread -update (Claude Fable - 2026-11-24)
+    probe_after_swap();
 }
 
 static BOOL game_wants_system_cursor; // set by the game through host_show_cursor
@@ -769,6 +894,7 @@ static NSView *game_view;
 // It is a separate borderless window attached to the game window (a "child window"), not something drawn by the game:
 // that way it costs the renderer nothing and cannot disturb the game's GL state. A timer refreshes it twice a second.
 // Line 1: fps and frame time averaged over the last 30 frames, and the slowest of those 30 (host_present fills these).
+//         "GPU" = how long the graphics chip worked on the latest frame (frame probe above).
 // Line 2: the game's resolution, and how it reaches the window: "native", "MetalFX" (+ CPU-side cost) or "stretch".
 // Line 3: the process's memory footprint, and the game heap's high-water mark out of its 3328 MB address-space limit.
 volatile float host_hud_ms, host_hud_worst;
@@ -795,8 +921,9 @@ static void hud_update(void) {
                                                                    host_mfx_us / 1000.0]
                                       : [NSString stringWithFormat:@"%dx%d -> %dx%d stretch", ew, eh, bw, bh];
     hud_label.stringValue = [NSString
-        stringWithFormat:@" %3.0f fps   %.1f ms   worst %.0f ms \n %@ \n memory %.1f GB   game heap %u / 3328 MB ",
-                         ms > 0 ? 1000.0 / ms : 0.0, ms, host_hud_worst, res, foot, rt_heap_used_mb()];
+        stringWithFormat:
+            @" %3.0f fps   %.1f ms   worst %.0f ms   GPU %.1f ms \n %@ \n memory %.1f GB   game heap %u / 3328 MB ",
+            ms > 0 ? 1000.0 / ms : 0.0, ms, host_hud_worst, (double)host_gpu_ms, res, foot, rt_heap_used_mb()];
     [hud_label sizeToFit];
     NSRect c = [pw contentRectForFrameRect:pw.frame]; // screen coordinates
     NSSize sz = hud_label.frame.size;
@@ -917,6 +1044,24 @@ void host_show_cursor(int show) {
     if (w > 0 && h > 0)
         [self fitWindowToEngineWidth:w height:h];
     [[self window] center];
+    // Claude Fable - 2026-11-24: frame pacing. Default: a 60 Hz timer starts each game frame (so 60 fps is the ceiling, on any
+    // display). RT32_PACE=display (experimental) lets the display start the frames instead, through a display link:
+    // on a 120 Hz or ProMotion screen the game may then run above 60 fps, and a variable-refresh screen can follow
+    // the game's own rate (asked for as "anything from 30 fps up to the screen's maximum").
+    const char *pace = getenv("RT32_PACE");
+    if (pace && !strcmp(pace, "display")) {
+        if (@available(macOS 14.0, *)) {
+            CADisplayLink *dl = [self displayLinkWithTarget:self selector:@selector(tick:)];
+            float top = (float)(self.window.screen ?: [NSScreen mainScreen]).maximumFramesPerSecond;
+            if (top < 60)
+                top = 60;
+            dl.preferredFrameRateRange = CAFrameRateRangeMake(30, top, top);
+            [dl addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
+            fprintf(stderr, "[host] frame pacing: display link, up to %.0f fps on this screen\n", top);
+            return;
+        }
+        fprintf(stderr, "[host] RT32_PACE=display needs macOS 14 or later; using the 60 Hz timer\n");
+    }
     self.timer = [NSTimer scheduledTimerWithTimeInterval:1.0 / 60.0
                                                   target:self
                                                 selector:@selector(tick:)
@@ -928,7 +1073,7 @@ void host_show_cursor(int show) {
 // Once the game renders on its own thread, run frames straight from the timer instead of through
 // setNeedsDisplay: AppKit's layer display touches (and locks) the shared GL context on the main thread,
 // which races the render thread (driver crash in glBlitFramebuffer) or deadlocks against it.
-- (void)tick:(NSTimer *)t {
+- (void)tick:(id)t { // called by the 60 Hz timer, or by the display link with RT32_PACE=display
     if (host_gl_offthread)
         [self frameStep];
     else

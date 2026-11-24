@@ -396,14 +396,55 @@ void gl_ctx_unlock(void) {
         CGLUnlockContext((CGLContextObj)host_cgl_context());
     }
 }
+static uint64_t gl_slow_limit; // set on first use, see gl_slow_report below
 void gl_enter(CPU *c) {
+    if (__builtin_expect(gl_slow_limit == ~0ull, 0)) {
+        mach_timebase_info_data_t tb;
+        mach_timebase_info(&tb);
+        const char *e = getenv("RT32_SLOWCALL_MS"); // default 8 ms; 0 turns the log off
+        double ms = e ? atof(e) : 8.0;
+        gl_slow_limit = ms > 0 ? (uint64_t)(ms * 1e6 * tb.denom / tb.numer) : ~0ull - 1;
+    }
     gl_ctx_lock();
     gl_in_cpu = c;
     gl_t0 = mach_absolute_time();
 }
+// Claude Fable - 2026-11-24: the slowest single GL call since the host last asked (frame probe in host.m). A hitch caused by
+// the driver compiling a shader or pipeline shows up as one very long draw, link or compile call.
+static _Thread_local const char *gl_cur_name = "";
+// Any single call over 8 ms is logged with the shader program in use and how long ago that program was linked.
+// "[slowcall] ... glDrawElements 41 ms, program 912 linked 0 frames ago" is the signature of a pipeline being built
+// at first use: the kind of stall that warming shaders up ahead of time removes.
+static uint64_t gl_slow_limit = ~0ull;
+static int gl_prog_linked_at[65536];
+static void gl_slow_report(uint64_t d) {
+    static int shown;
+    extern volatile int host_present_count;
+    static mach_timebase_info_data_t tb;
+    if (!tb.denom)
+        mach_timebase_info(&tb);
+    if (shown++ >= 600)
+        return;
+    GLint prog = 0;
+    glGetIntegerv(GL_CURRENT_PROGRAM, &prog);
+    int at = gl_prog_linked_at[prog & 0xFFFF];
+    char age[48] = "link time unknown";
+    if (at)
+        snprintf(age, sizeof age, "linked %d frames ago", host_present_count + 1 - at);
+    fprintf(stderr, "[slowcall] present #%d: %s %.1f ms, program %d %s\n", host_present_count, gl_cur_name,
+            (double)d * tb.numer / tb.denom / 1e6, prog, age);
+}
+volatile uint64_t gl_slow_ticks;
+const char *volatile gl_slow_name = "";
 void gl_leave(void) {
     uint64_t d = mach_absolute_time() - gl_t0;
     gl_ticks_total += d;
+    if (d > gl_slow_ticks) {
+        gl_slow_ticks = d;
+        gl_slow_name = gl_cur_name;
+    }
+    if (__builtin_expect(d > gl_slow_limit, 0))
+        gl_slow_report(d);
     if (gl_hist_cur >= 0)
         gl_hist_t[gl_hist_cur] += d;
     gl_in_cpu = NULL;
@@ -466,6 +507,7 @@ static void gl_clamp_r11_step(const char *name) {
 }
 volatile uint32_t gl_tex_comp, gl_tex_plain, gl_tex_gen, gl_tex_del;
 void gl_trace(const char *name) {
+    gl_cur_name = name;
     if (__builtin_expect(clamp_r11, 1)) {
         if (clamp_r11 < 0)
             clamp_r11 = getenv("RT32_CLAMP_R11") != NULL;
@@ -1831,9 +1873,54 @@ void I__glGetStringi(CPU *c) {
 
 // Shader compile/link with diagnostics: failures print the driver's log (the first 30), successes are counted.
 static int sh_ok, sh_bad, pr_ok, pr_bad;
+// Claude Fable - 2026-11-24: shader census, to judge whether warming shaders up ahead of time could help. Each source text is
+// hashed; compile time is added up separately for texts seen for the first time and for repeats. If repeats turn out
+// much cheaper, the driver keeps compiled shaders around and compiling early would pay off later.
+#define SH_SEEN 16384
+static uint64_t sh_seen[SH_SEEN];
+volatile uint32_t gl_sh_new, gl_sh_repeat;
+volatile uint64_t gl_sh_new_ticks, gl_sh_repeat_ticks;
+static int sh_note_source(GLuint s) { // returns 1 if this exact source was compiled before in this run
+    static char *buf;
+    static GLint cap;
+    GLint len = 0;
+    glGetShaderiv(s, GL_SHADER_SOURCE_LENGTH, &len);
+    if (len <= 0)
+        return 0;
+    if (len > cap) {
+        free(buf);
+        cap = len + 4096;
+        buf = malloc((size_t)cap);
+    }
+    GLsizei got = 0;
+    glGetShaderSource(s, cap, &got, buf);
+    uint64_t h = 1469598103934665603ull; // FNV-1a
+    for (GLsizei i = 0; i < got; i++)
+        h = (h ^ (uint8_t)buf[i]) * 1099511628211ull;
+    if (!h)
+        h = 1;
+    for (uint32_t i = (uint32_t)(h % SH_SEEN), k = 0; k < SH_SEEN; k++, i = (i + 1) % SH_SEEN) {
+        if (sh_seen[i] == h)
+            return 1;
+        if (!sh_seen[i]) {
+            sh_seen[i] = h;
+            return 0;
+        }
+    }
+    return 0;
+}
 static void glCompileShader_impl(CPU *c) {
     GLuint s = ARG(0);
+    int repeat = sh_note_source(s);
+    uint64_t sh_t0 = mach_absolute_time();
     glCompileShader(s);
+    if (repeat) {
+        gl_sh_repeat++;
+        gl_sh_repeat_ticks += mach_absolute_time() - sh_t0;
+    } else {
+        gl_sh_new++;
+        gl_sh_new_ticks += mach_absolute_time() - sh_t0;
+    }
     GLint ok = 0;
     glGetShaderiv(s, GL_COMPILE_STATUS, &ok);
     if (ok) {
@@ -1858,8 +1945,14 @@ static void glCompileShader_impl(CPU *c) {
         }
     }
 }
+// Claude Fable - 2026-11-24: the frame in which each program was linked, so a slow draw can be recognised as "first use of a
+// brand-new shader program" (the driver builds its real pipeline at that first draw, not at link time).
 static void glLinkProgram_impl(CPU *c) {
     GLuint p = ARG(0);
+    {
+        extern volatile int host_present_count;
+        gl_prog_linked_at[p & 0xFFFF] = host_present_count + 1;
+    }
     glLinkProgram(p);
     GLint ok = 0;
     glGetProgramiv(p, GL_LINK_STATUS, &ok);

@@ -133,8 +133,9 @@ static inline void wrsx(uint32_t a, XMM v) {
 RT_ORD(uint8_t, 8, __ATOMIC_ACQUIRE, __ATOMIC_RELEASE)
 RT_ORD(uint16_t, 16, __ATOMIC_ACQUIRE, __ATOMIC_RELEASE)
 RT_ORD(uint32_t, 32, __ATOMIC_ACQUIRE, __ATOMIC_RELEASE)
-RT_ORD(uint64_t, 64, __ATOMIC_ACQUIRE, __ATOMIC_RELEASE) RT_ORD(uint32_t, f32, RT_FP_LD, RT_FP_ST)
-    RT_ORD(uint64_t, f64, RT_FP_LD, RT_FP_ST) static inline uint8_t rd8(uint32_t a) {
+RT_ORD(uint64_t, 64, __ATOMIC_ACQUIRE, __ATOMIC_RELEASE)
+RT_ORD(uint32_t, f32, RT_FP_LD, RT_FP_ST) RT_ORD(uint64_t, f64, RT_FP_LD, RT_FP_ST) static inline uint8_t
+    rd8(uint32_t a) {
     return rdo8(a);
 }
 static inline uint16_t rd16(uint32_t a) {
