@@ -1364,7 +1364,9 @@ static void confine_pointer(NSWindow *w) {
     { // tell the game when its window gains or loses focus (it enables mouse input only while active)
         extern void rt_carbon_window(int active);
         static int was = -1;
-        int now = [NSApp isActive] && [[self window] isKeyWindow];
+        // Claude Fable - 2026-11-24: a scripted run (RT32_INPUT) counts as focused, so unattended measurement runs behave
+        // the same whether or not macOS let the window come to the front.
+        int now = scripted() || ([NSApp isActive] && [[self window] isKeyWindow]);
         if (now != was) {
             rt_carbon_window(now);
             was = now;
@@ -1439,6 +1441,8 @@ static void confine_pointer(NSWindow *w) {
               rt_hid_key_event(held_k, 0);
               rt_carbon_key(held_k, ch, 0, 0);
             });
+        } else if (!strncmp(act, "pad:", 4)) { // controller buttons (XInput bits, e.g. 0x1000 = A) held for 12 polls
+            host_pad_script((uint16_t)strtoul(act + 4, NULL, 0), 12);
         } else if (!strncmp(act, "key:", 4)) {
             uint32_t k = (uint32_t)(act[4] == '#' ? strtoul(act + 5, NULL, 0) : (uint8_t)act[4]);
             game32_key(gcpu, 1, k, 0);

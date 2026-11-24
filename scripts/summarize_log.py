@@ -11,7 +11,7 @@ text = open(path, errors="replace").read().splitlines()
 
 res = [m.group(1) for l in text for m in [re.search(r"engine resolution -> (\d+x\d+)", l)] if m]
 mfx = [m.group(1) for l in text for m in [re.search(r"\[mfx\] MetalFX spatial upscaling on[^:]*: (\S+ -> \S+)", l)] if m]
-perf, frames, hitches, extra, slow, shader = [], [], [], {}, [], None
+perf, frames, hitches, extra, slow, shader, warm = [], [], [], {}, [], None, None
 frame_no = 0
 for l in text:
     m = re.match(r"\[perf\] present #(\d+): ([\d.]+) ms/frame \(([\d.]+) fps\), (\d+) GL calls, (\d+) draws", l)
@@ -38,8 +38,10 @@ for l in text:
         continue
     m = re.match(r"\[slowcall\] present #(\d+): (\S+) ([\d.]+) ms, program (\d+) (?:linked (\d+) frames ago|link time unknown)", l)
     if m:
-        slow.append((int(m.group(1)), m.group(2), float(m.group(3)), int(m.group(5)) if m.group(5) else None))
+        slow.append((int(m.group(1)), m.group(2), float(m.group(3)), int(m.group(5)) if m.group(5) else None, int(m.group(4))))
         continue
+    if l.startswith("[warm]"):
+        warm = l
     if l.startswith("[shader] so far:"):
         shader = l
 
@@ -93,8 +95,19 @@ if H:
 S = [s for s in slow if s[0] >= first]
 if S:
     by = Counter(s[1] for s in S)
-    fresh = sum(1 for s in S if s[3] is not None and s[3] <= 2)
     print("single OpenGL calls over 8 ms: %d   (%s)" % (len(S), ", ".join("%s x%d" % kv for kv in by.most_common(5))))
-    print("  of those, %d used a shader program linked at most 2 frames earlier (first-use stalls)" % fresh)
+    # A first-use stall: a draw that is slow exactly once per shader program (the driver builds its pipeline then).
+    D = [s for s in S if "Draw" in s[1]]
+    progs = Counter(s[4] for s in D)
+    if D:
+        print("  slow draws: %d, %.0f ms in total, across %d different shader programs (%d program(s) slow more than once)"
+              % (len(D), sum(s[2] for s in D), len(progs), sum(1 for v in progs.values() if v > 1)))
+        print("  -> one slow draw per program is the signature of first-use shader stalls")
+    V = [s for s in S if "Validate" in s[1]]
+    if V:
+        print("  slow glValidateProgram calls: %d, %.0f ms in total (shader functions being compiled: an empty or new "
+              "system shader cache)" % (len(V), sum(s[2] for s in V)))
 if shader:
     print(shader)
+if warm:
+    print(warm)

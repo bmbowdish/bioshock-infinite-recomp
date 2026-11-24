@@ -56,3 +56,4 @@ typedef struct {
 } Rt32Pad;
 int host_pad_read(int index, Rt32Pad *out);            // slot 0..3; returns 1 and fills *out if a controller is there
 int host_pad_rumble(int index, float low, float high); // motor strengths 0..1; returns 1 if a controller is there
+void host_pad_script(uint16_t buttons, int reads);     // test runs: hold these buttons in slot 0 for the next N polls

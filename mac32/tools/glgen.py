@@ -120,6 +120,7 @@ glVertexPointer v i e i B
 # Claude Fable - 2026-11-24: glBlitFramebuffer and glBlitFramebufferEXT were removed from this table. They are hand-written in
 # runtime/gl.c now, because copies to the window must be mapped from the game's resolution to the real window (and
 # may be handed to MetalFX). Do not add them back here: the linker would report a duplicate symbol.
+# The same goes for glValidateProgram (hand-written in gl.c: optional shader warm-up).
 ALIAS = """
 glBindBufferBase glBindBufferBase v e u u
 glBindSampler glBindSampler v u u
@@ -216,7 +217,6 @@ glUniform3iv glUniform3iv v i i p
 glUniform4iv glUniform4iv v i i p
 glUniformMatrix2fv glUniformMatrix2fv v i i u p
 glUniformMatrix3fv glUniformMatrix3fv v i i u p
-glValidateProgram glValidateProgram v u
 glBeginQueryARB glBeginQuery v e u
 glEndQueryARB glEndQuery v e
 glGenQueriesARB glGenQueries v i o

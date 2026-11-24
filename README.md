@@ -61,7 +61,11 @@ Tested with an Xbox controller. Rumble is not implemented yet.
 **On Mac keyboards, hold `fn` with these keys** (`fn`+`F12`, `fn`+`F9`).
 
 ## Known limitations
-- Occasional short hitches, mostly while shaders compile or a level loads.
+- The first time each level is loaded on a Mac, macOS builds its shader cache for the game: that load takes
+  noticeably longer and stutters. Later loads of the same level are quick.
+- The first time a new effect or material appears there can be a short hitch (10-90 ms) while the graphics driver
+  finishes building its shader; each one happens once per Mac. `RT32_WARM=1` (experimental) moves that work into
+  the loading screen.
 - The game's volume sliders do not affect video sound.
 - Controllers do not rumble yet.
 - Tested on a small number of Macs. Reports are welcome.

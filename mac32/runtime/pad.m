@@ -175,14 +175,40 @@ static void pad_start(void) {
     });
 }
 
+// Scripted button presses for unattended test runs (RT32_INPUT "frame:pad:0x1000" = press A): the buttons are held
+// in slot 0 for the next `reads` polls by the game, on top of whatever a real controller there is doing. Slot 0
+// reports "connected" while a scripted press is in progress even with no controller attached.
+static uint16_t pad_script_buttons;
+static int pad_script_reads;
+static uint32_t pad_script_packet;
+void host_pad_script(uint16_t buttons, int reads) {
+    os_unfair_lock_lock(&pad_lock);
+    pad_script_buttons = buttons;
+    pad_script_reads = reads;
+    pad_script_packet++;
+    os_unfair_lock_unlock(&pad_lock);
+}
+
 int host_pad_read(int index, Rt32Pad *out) {
     pad_start();
     if (index < 0 || index >= NPAD)
         return 0;
     os_unfair_lock_lock(&pad_lock);
     int here = pad_present[index];
+    Rt32Pad p = here ? pad_snap[index] : (Rt32Pad){0};
+    if (index == 0 && (pad_script_reads > 0 || pad_script_buttons)) {
+        if (pad_script_reads > 0) {
+            p.buttons |= pad_script_buttons;
+            here = 1;
+            if (out && --pad_script_reads == 0) { // released: one more state change
+                pad_script_buttons = 0;
+                pad_script_packet++;
+            }
+        }
+    }
+    p.packet += pad_script_packet;
     if (here && out)
-        *out = pad_snap[index];
+        *out = p;
     os_unfair_lock_unlock(&pad_lock);
     return here;
 }

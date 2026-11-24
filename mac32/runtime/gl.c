@@ -1976,6 +1976,83 @@ static void glLinkProgram_impl(CPU *c) {
     }
 }
 
+// Claude Fable - 2026-11-24: EXPERIMENT (RT32_WARM=1, off by default): shader warm-up. Measured: the first draw with each
+// new shader program stalls for 10-90 ms while the driver builds its real pipeline. The game validates every program
+// right after creating it (during loading), so this draws one invisible triangle with the program at that moment,
+// into a tiny private framebuffer, hoping the driver does its expensive work then. Whether that carries over to
+// the game's real draws (which use other vertex layouts and render targets) is exactly what is being tested.
+static int gl_warm = -1;
+static void gl_warm_program(GLuint p) {
+    static GLuint fbo, tex, rb, vao;
+    static uint64_t ticks, worst;
+    static uint32_t n;
+    GLint ok = 0;
+    glGetProgramiv(p, GL_LINK_STATUS, &ok);
+    if (!ok)
+        return;
+    GLint prog = 0, dfb = 0, vaob = 0, vp[4];
+    glGetIntegerv(GL_CURRENT_PROGRAM, &prog);
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &dfb);
+    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &vaob);
+    glGetIntegerv(GL_VIEWPORT, vp);
+    if (!fbo) {
+        GLint t2 = 0, rbb = 0;
+        glGetIntegerv(GL_TEXTURE_BINDING_2D, &t2);
+        glGetIntegerv(GL_RENDERBUFFER_BINDING, &rbb);
+        glGenTextures(1, &tex);
+        glBindTexture(GL_TEXTURE_2D, tex);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 8, 8, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glGenRenderbuffers(1, &rb);
+        glBindRenderbuffer(GL_RENDERBUFFER, rb);
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, 8, 8);
+        glGenFramebuffers(1, &fbo);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
+        glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
+        glFramebufferRenderbuffer(GL_DRAW_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, rb);
+        glGenVertexArrays(1, &vao);
+        glBindTexture(GL_TEXTURE_2D, (GLuint)t2);
+        glBindRenderbuffer(GL_RENDERBUFFER, (GLuint)rbb);
+    }
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
+    glViewport(0, 0, 8, 8);
+    glBindVertexArray(vao);
+    glUseProgram(p);
+    uint64_t t0 = mach_absolute_time();
+    glDrawArrays(GL_TRIANGLES, 0, 3); // three identical vertices: nothing is rasterised, but the pipeline must exist
+    uint64_t d = mach_absolute_time() - t0;
+    glUseProgram((GLuint)prog);
+    glBindVertexArray((GLuint)vaob);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, (GLuint)dfb);
+    glViewport(vp[0], vp[1], vp[2], vp[3]);
+    while (glGetError()) {
+    } // a program whose samplers are not set up yet cannot be drawn; that is fine
+    ticks += d;
+    if (d > worst)
+        worst = d;
+    if (++n % 250 == 0) {
+        mach_timebase_info_data_t tb;
+        mach_timebase_info(&tb);
+        fprintf(stderr, "[warm] %u programs warmed up, %.0f ms in total, slowest %.1f ms\n", n,
+                (double)ticks * tb.numer / tb.denom / 1e6, (double)worst * tb.numer / tb.denom / 1e6);
+    }
+}
+void I__glValidateProgram(CPU *c) {
+    gl_trace("glValidateProgram");
+    gl_enter(c);
+    GLuint p = ARG(0);
+    glValidateProgram(p);
+    if (gl_warm < 0) {
+        const char *e = getenv("RT32_WARM");
+        gl_warm = e && atoi(e);
+        if (gl_warm)
+            fprintf(stderr, "[warm] shader warm-up experiment is ON\n");
+    }
+    if (gl_warm)
+        gl_warm_program(p);
+    gl_leave();
+}
+
 // Hitch logging: host time spent compiling/linking shaders, read and reset by the host every present
 volatile uint64_t rt_hitch_shader_ticks;
 volatile uint32_t rt_hitch_shader_n;

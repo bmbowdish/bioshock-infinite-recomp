@@ -837,9 +837,10 @@ NONET(socket)
 NONET(connect_UNIX2003)
 NONET(bind_UNIX2003)
 NONET(listen_UNIX2003)
-NONET(accept_UNIX2003) NONET(send_UNIX2003) NONET(sendto_UNIX2003) NONET(recv_UNIX2003) NONET(recvfrom_UNIX2003)
-    NONET(setsockopt) NONET(getsockopt) NONET(shutdown) NONET(getpeername_UNIX2003) NONET(getsockname_UNIX2003)
-        NONET(select_UNIX2003) NONET(select_DARWIN_EXTSN) void I__gethostbyname(CPU *c) {
+NONET(accept_UNIX2003)
+NONET(send_UNIX2003) NONET(sendto_UNIX2003) NONET(recv_UNIX2003) NONET(recvfrom_UNIX2003) NONET(setsockopt)
+    NONET(getsockopt) NONET(shutdown) NONET(getpeername_UNIX2003) NONET(getsockname_UNIX2003) NONET(select_UNIX2003)
+        NONET(select_DARWIN_EXTSN) void I__gethostbyname(CPU *c) {
     RET(0);
 }
 
