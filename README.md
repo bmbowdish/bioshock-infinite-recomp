@@ -57,8 +57,9 @@ Tested with an Xbox controller. Rumble is not implemented yet.
 |---|---|
 | **F12** | Shows or hides the performance overlay in the top-left corner: frame rate and frame time, the resolution and whether MetalFX is upscaling, and memory use. |
 | **F9** | Switches between MetalFX upscaling and a plain stretch, to compare them. Only has an effect while the game renders below the window's size. |
+| **F10** | Saves the next 48 frames as PNG images, exactly as drawn, for tracking down one-frame visual glitches. They go to the folder named in `RT32_SHOT_DIR` (the working directory if unset). Expect a short pause while they are written. |
 
-**On Mac keyboards, hold `fn` with these keys** (`fn`+`F12`, `fn`+`F9`).
+**On Mac keyboards, hold `fn` with these keys** (`fn`+`F12`, `fn`+`F9`, `fn`+`F10`).
 
 ### Optional switches
 Set these as environment variables when starting the app from Terminal, for example

@@ -14,6 +14,8 @@
 //  * Frame pacing by the display (RT32_PACE=display, in startEngine): a display link starts the frames instead of
 //    the 60 Hz timer, which lifts the 60 fps ceiling and lets a variable-refresh screen follow the game.
 //  * Test runs: scripted controller buttons ("pad:" in RT32_INPUT); a scripted run counts as focused.
+//  * Render-thread CPU time per frame on the [frame] line (Claude Opus - 2026-11-25).
+//  * Frame burst (present_burst, 2026-11-25): F10 saves the next 48 presented frames as images, for one-frame glitches.
 // How a frame reaches the screen now:
 //   game draws into its own off-screen buffer  ->  game calls glBlitFramebuffer to the window (gl.c)
 //     -> window same size as the game's picture: plain GL copy, then CGLFlushDrawable in host_present()
@@ -130,7 +132,49 @@ static void fbo_color_size(GLuint fb, int *w, int *h) {
 }
 // RT32_SHOT_PRESENT="60,300": save the frame being presented (read on the presenting thread, which owns the context)
 // RT32_SHOT_FBOS="1,4,5": also save color attachment 0 of these guest FBOs at the same frames
+// Claude Fable - 2026-11-25: F10 saves the next BURST_N presented frames (every frame, exactly as drawn) for hunting
+// one-frame glitches. Frames are kept in memory and written as burst<k>_<present#>.png once the burst is complete,
+// so capturing does not slow the frames being captured. Files go to RT32_SHOT_DIR (default: the working directory).
+#define BURST_N 48
+volatile int host_burst_req; // set by the key handler (main thread), consumed on the presenting thread
+static void present_burst(int n) {
+    static unsigned char *buf[BURST_N];
+    static int num[BURST_N], got, bw, bh, id, active;
+    if (host_burst_req && !active) {
+        host_burst_req = 0;
+        active = 1;
+        got = 0;
+        bw = host_back_w;
+        bh = host_back_h;
+        id++;
+        fprintf(stderr, "[host] F10: capturing %d frames from present #%d (%dx%d)\n", BURST_N, n, bw, bh);
+    }
+    if (!active || bw <= 0 || bh <= 0) {
+        active = 0;
+        return;
+    }
+    GLint rfb = 0, rbuf = 0;
+    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &rfb);
+    glGetIntegerv(GL_READ_BUFFER, &rbuf);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    glReadBuffer(GL_BACK);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    buf[got] = malloc((size_t)bw * bh * 4);
+    glReadPixels(0, 0, bw, bh, GL_RGBA, GL_UNSIGNED_BYTE, buf[got]);
+    num[got++] = n;
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)rfb);
+    glReadBuffer((GLenum)rbuf);
+    if (got == BURST_N) {
+        for (int i = 0; i < got; i++) {
+            write_png(buf[i], bw, bh, [NSString stringWithFormat:@"burst%d_%d.png", id, num[i]]);
+            free(buf[i]);
+        }
+        active = 0;
+        fprintf(stderr, "[host] F10: burst %d written\n", id);
+    }
+}
 static void present_shot(int n) {
+    present_burst(n);
     const char *shots = getenv("RT32_SHOT_PRESENT");
     if (!shots)
         return;
@@ -578,7 +622,7 @@ static int probe_q_active = -1, probe_q_state = 0; // state: 0 untested, 1 worki
 static int probe_q_ended[2];
 static struct {
     int n, gpu_n, b[4];
-    double dt, gpu, gpu_max, gl, wait;
+    double dt, gpu, gpu_max, gl, wait, cpu;
 } probe_acc;
 static double probe_ms(uint64_t ticks) {
     static mach_timebase_info_data_t tb;
@@ -590,8 +634,11 @@ static double probe_ms(uint64_t ticks) {
 static void probe_before_swap(int present) {
     extern volatile uint64_t gl_ticks_total, gl_slow_ticks;
     extern const char *volatile gl_slow_name;
-    static uint64_t t_last, gl_last;
+    static uint64_t t_last, gl_last, cpu_last;
     uint64_t now = mach_absolute_time();
+    // Claude Opus - 2026-11-25: CPU time this thread used per frame. Unlike the frame interval it is not hidden by the
+    // 60 Hz frame cap, so it shows small CPU savings (or costs) directly.
+    uint64_t cpu_now = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID);
     if (probe_q_state == 0 && getenv("RT32_NO_GPU_TIME"))
         probe_q_state = -1;
     if (probe_q_state >= 0) {
@@ -634,6 +681,8 @@ static void probe_before_swap(int present) {
         probe_acc.dt += dt;
         probe_acc.gl += gl;
         probe_acc.wait += wait;
+        if (cpu_now >= cpu_last)
+            probe_acc.cpu += (double)(cpu_now - cpu_last) / 1e6;
         probe_acc.b[dt <= 18.0 ? 0 : dt <= 27.0 ? 1 : dt <= 36.0 ? 2 : 3]++;
         if (dt > 50.0)
             fprintf(stderr,
@@ -644,10 +693,10 @@ static void probe_before_swap(int present) {
             fprintf(stderr,
                     "[frame] last 100 frames: interval %.1f ms | GPU avg %.1f max %.1f ms (%d samples) | GL calls %.1f "
                     "ms CPU | waiting for the display %.1f ms | pacing: %d at <=18 ms, %d at 18-27, %d at 27-36, %d "
-                    "slower\n",
+                    "slower | render thread CPU %.2f ms\n",
                     probe_acc.dt / 100, probe_acc.gpu_n ? probe_acc.gpu / probe_acc.gpu_n : 0.0, probe_acc.gpu_max,
                     probe_acc.gpu_n, probe_acc.gl / 100, probe_acc.wait / 100, probe_acc.b[0], probe_acc.b[1],
-                    probe_acc.b[2], probe_acc.b[3]);
+                    probe_acc.b[2], probe_acc.b[3], probe_acc.cpu / 100);
             {
                 extern volatile uint32_t gl_sh_new, gl_sh_repeat;
                 extern volatile uint64_t gl_sh_new_ticks, gl_sh_repeat_ticks;
@@ -667,6 +716,7 @@ static void probe_before_swap(int present) {
     }
     t_last = now;
     gl_last = gl_ticks_total;
+    cpu_last = cpu_now;
     host_probe_wait_ticks = 0;
     gl_slow_ticks = 0;
 }
@@ -1387,6 +1437,12 @@ static void confine_pointer(NSWindow *w) {
         hud_toggle();
         return;
     } // F12: performance overlay
+    if ([e keyCode] == 109) { // Claude Fable - 2026-11-25: F10 saves the next frames as images (see present_burst)
+        host_burst_req = 1;
+        if (getenv("RT32_DIAG_FILM_BOX")) // also run the per-draw box capture (gl.c) on the next sampled frames
+            host_capture_request = 1;
+        return;
+    }
     if ([e keyCode] == 101) {
         host_mfx_off = !host_mfx_off;
         fprintf(stderr, "[mfx] F9: switched to %s at present #%d\n", host_mfx_off ? "PLAIN STRETCH" : "METALFX",
@@ -1489,8 +1545,11 @@ static void confine_pointer(NSWindow *w) {
         static int k;
         if ((k++ % 60) == 0) { // keep the refresh step of the window's current screen up to date
             NSScreen *sc = self.window.screen ?: [NSScreen mainScreen];
-            if (sc.minimumRefreshInterval > 0)
-                host_screen_step_ms = (float)(sc.minimumRefreshInterval * 1000.0);
+            if (@available(
+                    macOS 12.0, *)) { // Claude Fable - 2026-11-25: NSScreen's refresh interval exists from macOS 12
+                if (sc.minimumRefreshInterval > 0)
+                    host_screen_step_ms = (float)(sc.minimumRefreshInterval * 1000.0);
+            }
             if (@available(macOS 14.0, *)) {
                 float top = (float)sc.maximumFramesPerSecond;
                 if (top < 60)

@@ -11,6 +11,9 @@
 //    it was linked): how first-use shader stalls were identified.
 //  * Shader census (sh_note_source): compile time for first-time and repeated shader sources.
 //  * I__glValidateProgram (hand-written; removed from tools/glgen.py) with the optional shader warm-up, RT32_WARM=1.
+//  * Box capture (RT32_DIAG_FILM_BOX, 2026-11-25): saves a screen region after every draw that changes it, with the
+//    draw's depth and blend state. Diagnostic only; triggered by F10.
+//  * RT32_NO_CALL_TIMING=1 (gl_enter/gl_leave, Claude Opus - 2026-11-25): skips the per-call clock reads.
 // Terms: "window framebuffer" = OpenGL framebuffer 0 = what ends up on screen. "engine pixels" = coordinates in the
 // game's chosen resolution. gl_win_scale / gl_win_off_x / gl_win_off_y (set by host.m) convert engine pixels to
 // real window pixels; MAPX/MAPY/MAPS apply that conversion.
@@ -160,6 +163,85 @@ static void gl_samples_step(const char *name) {
                         v[0], v[1], v[2], v[3]);
                 memcpy(last, v, sizeof v);
                 lastfb = samp_fb;
+            }
+        }
+        // Claude Fable - 2026-11-25: RT32_DIAG_FILM_BOX="x,y,w,h" (diagnostic only; GL coordinates in the target).
+        // On every sampled frame, after each draw into a scene colour target (R11F_G11F_B10F, >= 1000 px wide) that
+        // changed the pixels inside that box, save the box at full size as box_f<frame>_<draw>_p<prog>.ppm in
+        // RT32_SHOT_DIR and log the draw's depth, polygon-offset and blend state. Shows which draw paints (or
+        // damages) a small distant object.
+        {
+            static int bx = -2, by, bw, bh;
+            static float *prev;
+            static GLint prev_c0;
+            if (bx == -2) {
+                bx = -1;
+                const char *s = getenv("RT32_DIAG_FILM_BOX");
+                if (s && sscanf(s, "%d,%d,%d,%d", &bx, &by, &bw, &bh) != 4)
+                    bx = -1;
+            }
+            if (bx >= 0 && samp_fb && r && samp_c0 && samp_vp[2] >= 1000) {
+                GLint rfb = 0, rb = 0, rs = 0, bs = 0, pb = 0;
+                glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &rfb);
+                glGetIntegerv(GL_READ_BUFFER, &rb);
+                glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)samp_fb);
+                glReadBuffer(GL_COLOR_ATTACHMENT0);
+                glGetFramebufferAttachmentParameteriv(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                                      GL_FRAMEBUFFER_ATTACHMENT_RED_SIZE, &rs);
+                glGetFramebufferAttachmentParameteriv(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                                      GL_FRAMEBUFFER_ATTACHMENT_BLUE_SIZE, &bs);
+                if (rs == 11 && bs == 10) {
+                    extern volatile int host_present_count;
+                    size_t nb = (size_t)bw * bh * 3 * sizeof(float);
+                    float *px = malloc(nb);
+                    glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &pb);
+                    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+                    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+                    glReadPixels(bx, by, bw, bh, GL_RGB, GL_FLOAT, px);
+                    glGetError();
+                    glBindBuffer(GL_PIXEL_PACK_BUFFER, (GLuint)pb);
+                    if (!prev || prev_c0 != samp_c0 || memcmp(prev, px, nb)) {
+                        char path[600];
+                        const char *dir = getenv("RT32_SHOT_DIR") ? getenv("RT32_SHOT_DIR") : ".";
+                        snprintf(path, sizeof path, "%s/box_f%d_%05d_p%d.ppm", dir, host_present_count, samp_idx,
+                                 samp_prog);
+                        FILE *f = fopen(path, "wb");
+                        if (f) {
+                            fprintf(f, "P6\n%d %d\n255\n", bw, bh);
+                            for (int y = bh - 1; y >= 0; y--)
+                                for (int x = 0; x < bw * 3; x++) {
+                                    float v = px[(size_t)y * bw * 3 + x];
+                                    v = v / (1.0f + v);
+                                    v = v < 0 ? 0 : v;
+                                    fputc((int)(sqrtf(v) * 255.0f + 0.5f), f);
+                                }
+                            fclose(f);
+                        }
+                        GLint dt = glIsEnabled(GL_DEPTH_TEST), df = 0, po = glIsEnabled(GL_POLYGON_OFFSET_FILL);
+                        GLint be = glIsEnabled(GL_BLEND), sr = 0, dr = 0, st = glIsEnabled(GL_STENCIL_TEST);
+                        GLboolean dm = 0;
+                        GLfloat pf = 0, pu = 0, dr2[2] = {0};
+                        glGetIntegerv(GL_DEPTH_FUNC, &df);
+                        glGetBooleanv(GL_DEPTH_WRITEMASK, &dm);
+                        glGetFloatv(GL_POLYGON_OFFSET_FACTOR, &pf);
+                        glGetFloatv(GL_POLYGON_OFFSET_UNITS, &pu);
+                        glGetFloatv(GL_DEPTH_RANGE, dr2);
+                        glGetIntegerv(GL_BLEND_SRC_RGB, &sr);
+                        glGetIntegerv(GL_BLEND_DST_RGB, &dr);
+                        fprintf(
+                            stderr,
+                            "[box] f%d draw #%d prog %d (%u px) target %d depth test %d func %#x write %d range %g..%g "
+                            "offset %d factor %g units %g stencil %d blend %d src %#x dst %#x\n",
+                            host_present_count, samp_idx, samp_prog, r, samp_c0, dt, df, dm, dr2[0], dr2[1], po, pf, pu,
+                            st, be, sr, dr);
+                        free(prev);
+                        prev = px;
+                        prev_c0 = samp_c0;
+                    } else
+                        free(px);
+                }
+                glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)rfb);
+                glReadBuffer((GLenum)rb);
             }
         }
         // RT32_DIAG_FILMSTRIP=1 (diagnostic only): on the first sampled frame, after each draw into the scene colour
@@ -374,6 +456,7 @@ static void gl_samples_step(const char *name) {
 volatile CPU *gl_in_cpu;
 volatile uint64_t gl_ticks_total;
 static uint64_t gl_t0;
+static int gl_call_timing = 1; // Claude Opus - 2026-11-25: 0 with RT32_NO_CALL_TIMING=1 (set in gl_enter)
 // Claude Fable - 2026-11-24: once the game renders on its own thread, AppKit still updates the context's drawable from the main
 // thread (window activation, resize, screen change). Seen as a crash in gldUpdateDrawFramebuffer during glBlitFramebuffer
 // at startup (2 of ~6 runs). Each GL call now holds the context's CGL lock, and the main-thread update takes the same
@@ -407,11 +490,17 @@ void gl_enter(CPU *c) {
         mach_timebase_info(&tb);
         const char *e = getenv("RT32_SLOWCALL_MS"); // default 8 ms; 0 turns the log off
         double ms = e ? atof(e) : 8.0;
+        // Claude Opus - 2026-11-25: RT32_NO_CALL_TIMING=1 skips the two clock reads around every GL call. The frame
+        // probe then reports 0 ms inside GL calls, and [slowcall] / [hitch+] can no longer name the slow call.
+        gl_call_timing = !getenv("RT32_NO_CALL_TIMING");
+        if (!gl_call_timing)
+            ms = 0;
         gl_slow_limit = ms > 0 ? (uint64_t)(ms * 1e6 * tb.denom / tb.numer) : ~0ull - 1;
     }
     gl_ctx_lock();
     gl_in_cpu = c;
-    gl_t0 = mach_absolute_time();
+    if (gl_call_timing)
+        gl_t0 = mach_absolute_time();
 }
 // Claude Fable - 2026-11-24: the slowest single GL call since the host last asked (frame probe in host.m). A hitch caused by
 // the driver compiling a shader or pipeline shows up as one very long draw, link or compile call.
@@ -441,16 +530,18 @@ static void gl_slow_report(uint64_t d) {
 volatile uint64_t gl_slow_ticks;
 const char *volatile gl_slow_name = "";
 void gl_leave(void) {
-    uint64_t d = mach_absolute_time() - gl_t0;
-    gl_ticks_total += d;
-    if (d > gl_slow_ticks) {
-        gl_slow_ticks = d;
-        gl_slow_name = gl_cur_name;
+    if (gl_call_timing) {
+        uint64_t d = mach_absolute_time() - gl_t0;
+        gl_ticks_total += d;
+        if (d > gl_slow_ticks) {
+            gl_slow_ticks = d;
+            gl_slow_name = gl_cur_name;
+        }
+        if (__builtin_expect(d > gl_slow_limit, 0))
+            gl_slow_report(d);
+        if (gl_hist_cur >= 0)
+            gl_hist_t[gl_hist_cur] += d;
     }
-    if (__builtin_expect(d > gl_slow_limit, 0))
-        gl_slow_report(d);
-    if (gl_hist_cur >= 0)
-        gl_hist_t[gl_hist_cur] += d;
     gl_in_cpu = NULL;
     gl_ctx_unlock();
 }
