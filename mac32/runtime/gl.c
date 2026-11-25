@@ -7,6 +7,10 @@
 //  * I__glBlitFramebuffer (hand-written; removed from tools/glgen.py): maps the game's final copy-to-window onto the
 //    real window, and hands it to MetalFX (host.m host_mfx_blit) when the window is bigger than the game's picture.
 //  * Buffer aliasing (RT32_ALIAS) is now on by default.
+//  * Slowest GL call per frame and the [slowcall] log (any call over 8 ms, with the shader program in use and when
+//    it was linked): how first-use shader stalls were identified.
+//  * Shader census (sh_note_source): compile time for first-time and repeated shader sources.
+//  * I__glValidateProgram (hand-written; removed from tools/glgen.py) with the optional shader warm-up, RT32_WARM=1.
 // Terms: "window framebuffer" = OpenGL framebuffer 0 = what ends up on screen. "engine pixels" = coordinates in the
 // game's chosen resolution. gl_win_scale / gl_win_off_x / gl_win_off_y (set by host.m) convert engine pixels to
 // real window pixels; MAPX/MAPY/MAPS apply that conversion.

@@ -6,6 +6,10 @@
 //    is used. Without it the engine sizes the pool from a "detected video memory" of 768 MB (728 MB pool), which
 //    made textures flip between blurry and sharp at 4K. See the [pool] block after PreInit and in game32_frame.
 //  * RT32_GAME_ARGS="...": extra engine command-line switches for experiments.
+//  * GAME_EXE_SHA256 / rt32_game.exe_sha256: the one build of the game this port fits (checked at launch and by
+//    the build scripts).
+//  * H_XInputGetState / H_XInputSetState: the game's own controller functions, replaced through hle.txt and
+//    answered from the runtime's controller support (mac32/runtime/pad.m).
 // =====================================================================
 // BioShock Infinite (Aspyr 2013 Mac build, UE3) on Recomp-Framework mac32.
 // The Aspyr launcher (main @0x5b3a2) is Carbon-based; we skip it and drive UE3's GuardedMain steps ourselves:

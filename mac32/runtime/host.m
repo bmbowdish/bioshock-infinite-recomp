@@ -7,6 +7,13 @@
 //  * Resolution + fullscreen following (frameStep, fitWindowToEngineWidth, followEngineFullscreen): the window follows
 //    the resolution and Fullscreen option chosen in the game's own menu.
 //  * Extra log lines: [mem] every 1000 frames; texture traffic and disk reads on the [perf] line every 100 frames.
+//  * Supported-build check (check_game_binary): the game executable's SHA-256 must match the build the port fits.
+//  * Frame probe (search "frame probe"): GPU time, CPU time in GL calls, time waiting for the display and pacing
+//    buckets as a [frame] line every 100 frames; [hitch+] names the slowest GL call of each hitch.
+//  * On-screen timing (search "on glass"): when frames really appeared, against the display's refresh steps.
+//  * Frame pacing by the display (RT32_PACE=display, in startEngine): a display link starts the frames instead of
+//    the 60 Hz timer, which lifts the 60 fps ceiling and lets a variable-refresh screen follow the game.
+//  * Test runs: scripted controller buttons ("pad:" in RT32_INPUT); a scripted run counts as focused.
 // How a frame reaches the screen now:
 //   game draws into its own off-screen buffer  ->  game calls glBlitFramebuffer to the window (gl.c)
 //     -> window same size as the game's picture: plain GL copy, then CGLFlushDrawable in host_present()
@@ -26,6 +33,7 @@
 // keyboard are then ignored).
 #define GL_SILENCE_DEPRECATION
 #import <Cocoa/Cocoa.h>
+#include <os/lock.h>
 #include <CommonCrypto/CommonDigest.h>
 #import <Metal/Metal.h>
 #import <QuartzCore/QuartzCore.h>
@@ -191,6 +199,65 @@ static id mfx_scaler;
 static id<MTLTexture> mfx_ta[MFX_RING], mfx_tb;
 static IOSurfaceRef mfx_sa[MFX_RING];
 static GLuint mfx_gta[MFX_RING], mfx_fa[MFX_RING];
+// Claude Fable - 2026-11-24: "on glass" timing, to verify adaptive sync. macOS reports the moment each frame presented through
+// the Metal layer actually appeared on the screen. On a fixed-rate screen the gaps between frames can only be whole
+// refresh periods (8.3, 16.7, 25 ms at 120 Hz); on a variable-refresh screen that is following the game they take
+// in-between values and stay steady. One "[glass]" line per 100 frames says which of the two is happening.
+volatile float host_screen_step_ms = 8.333f; // shortest refresh period of the screen the window is on (main thread)
+static os_unfair_lock glass_lock = OS_UNFAIR_LOCK_INIT;
+static void glass_note(double when) { // any thread; when = seconds, 0 if the frame was never shown
+    static double last, sum, sumsq, lo, hi;
+    static int n, on_step[5], between, dropped, calls;
+    os_unfair_lock_lock(&glass_lock);
+    calls++;
+    if (when <= 0) {
+        dropped++;
+    } else {
+        if (last > 0 && when > last) {
+            double dt = (when - last) * 1000.0, step = host_screen_step_ms > 1 ? host_screen_step_ms : 8.333;
+            double k = dt / step;
+            int ki = (int)(k + 0.5);
+            if (ki >= 1 && ki <= 4 && fabs(dt - ki * step) < 0.6)
+                on_step[ki]++;
+            else if (ki > 4 && fabs(dt - ki * step) < 0.6)
+                on_step[0]++;
+            else
+                between++;
+            if (!n || dt < lo)
+                lo = dt;
+            if (!n || dt > hi)
+                hi = dt;
+            sum += dt;
+            sumsq += dt * dt;
+            n++;
+        }
+        last = when;
+    }
+    if (calls >= 100 && n < 50) { // macOS is not reporting display times (seen after the window lost focus once)
+        fprintf(stderr, "[glass] last %d frames: only %d came back with a display time, %d reported as never shown\n",
+                calls, n, dropped);
+        calls = n = between = dropped = 0;
+        sum = sumsq = 0;
+        memset(on_step, 0, sizeof on_step);
+    }
+    if (n == 100) {
+        calls = 0;
+        double avg = sum / n, var = sumsq / n - avg * avg;
+        fprintf(
+            stderr,
+            "[glass] last 100 frames on screen: every %.1f ms on average (shortest %.1f, longest %.1f, spread %.1f) | "
+            "exactly on a %.1f ms refresh step: %d (x1 %d, x2 %d, x3 %d, x4 %d, more %d) | between steps: %d | never "
+            "shown: %d\n",
+            avg, lo, hi, var > 0 ? sqrt(var) : 0.0, (double)host_screen_step_ms,
+            on_step[1] + on_step[2] + on_step[3] + on_step[4] + on_step[0], on_step[1], on_step[2], on_step[3],
+            on_step[4], on_step[0], between, dropped);
+        n = 0;
+        sum = sumsq = 0;
+        between = dropped = 0;
+        memset(on_step, 0, sizeof on_step);
+    }
+    os_unfair_lock_unlock(&glass_lock);
+}
 static CAMetalLayer *mfx_layer;
 static NSView *mfx_view; // created on the main thread (mfx_make_view)
 static volatile int mfx_view_shown, mfx_frame_presented;
@@ -416,6 +483,9 @@ int host_mfx_blit(int sx0, int sy0, int sx1, int sy1, int dx0, int dy0, int dx1,
                     [be endEncoding];
                     // Step 6: show it and return immediately. Nothing here waits for the GPU; the first version did
                     // (waitUntilCompleted) and that alone cost about 7.5 ms per frame.
+                    [dr addPresentedHandler:^(id<MTLDrawable> shown) {
+                      glass_note(shown.presentedTime);
+                    }];
                     [cb presentDrawable:dr];
                     [cb commit];
                     handled = 1;
@@ -490,6 +560,8 @@ static void mfx_make_view(NSView *parent) { // main thread, at window creation
     [parent addSubview:mfx_view];
 }
 
+static id host_pace_link; // the CADisplayLink when RT32_PACE=display is in use (main thread)
+static float host_pace_top;
 // ---- frame probe (Claude Fable - 2026-11-24): where each frame's time goes ----
 // Answers "is a slow or uneven frame the GPU, the driver, or waiting for the display?" with four numbers per frame:
 //   GPU        time the GPU spent on the frame (an OpenGL timer query around everything between two presents;
@@ -1044,10 +1116,13 @@ void host_show_cursor(int show) {
     if (w > 0 && h > 0)
         [self fitWindowToEngineWidth:w height:h];
     [[self window] center];
-    // Claude Fable - 2026-11-24: frame pacing. Default: a 60 Hz timer starts each game frame (so 60 fps is the ceiling, on any
-    // display). RT32_PACE=display (experimental) lets the display start the frames instead, through a display link:
-    // on a 120 Hz or ProMotion screen the game may then run above 60 fps, and a variable-refresh screen can follow
-    // the game's own rate (asked for as "anything from 30 fps up to the screen's maximum").
+    // Claude Fable - 2026-11-24: frame pacing. Default: a 60 Hz timer starts each game frame, so 60 fps is the ceiling
+    // on any display and frames are not lined up with the screen's refresh. RT32_PACE=display lets the display start
+    // the frames instead, through a display link asked for "anything from 30 fps up to the screen's maximum".
+    // Measured once, 30 minutes fullscreen on a 48-120 Hz variable-refresh monitor with MetalFX presenting: the game
+    // ran at up to 120 fps (99.7 average at low settings), 59% of frames were shown for exactly one refresh and 39%
+    // landed between the fixed refresh steps, i.e. the display was following the game. Still opt-in until it has
+    // been tried on more displays (a fixed 60 Hz screen, a laptop's built-in ProMotion screen).
     const char *pace = getenv("RT32_PACE");
     if (pace && !strcmp(pace, "display")) {
         if (@available(macOS 14.0, *)) {
@@ -1056,6 +1131,8 @@ void host_show_cursor(int show) {
             if (top < 60)
                 top = 60;
             dl.preferredFrameRateRange = CAFrameRateRangeMake(30, top, top);
+            host_pace_link = dl; // the range is refreshed in frameStep when the window moves to another screen
+            host_pace_top = top;
             [dl addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
             fprintf(stderr, "[host] frame pacing: display link, up to %.0f fps on this screen\n", top);
             return;
@@ -1074,6 +1151,27 @@ void host_show_cursor(int show) {
 // setNeedsDisplay: AppKit's layer display touches (and locks) the shared GL context on the main thread,
 // which races the render thread (driver crash in glBlitFramebuffer) or deadlocks against it.
 - (void)tick:(id)t { // called by the 60 Hz timer, or by the display link with RT32_PACE=display
+    if (@available(macOS 14.0, *)) {
+        if ([t isKindOfClass:[CADisplayLink class]]) { // how long the display says each refresh lasts
+            CADisplayLink *dl = t;
+            static double sum, lo, hi;
+            static int n;
+            double d = (dl.targetTimestamp - dl.timestamp) * 1000.0;
+            if (!n || d < lo)
+                lo = d;
+            if (!n || d > hi)
+                hi = d;
+            sum += d;
+            if (++n == 200) {
+                fprintf(stderr,
+                        "[link] display link, last 200 callbacks: refresh period %.1f ms on average (shortest %.1f, "
+                        "longest %.1f)\n",
+                        sum / n, lo, hi);
+                n = 0;
+                sum = 0;
+            }
+        }
+    }
     if (host_gl_offthread)
         [self frameStep];
     else
@@ -1385,6 +1483,24 @@ static void confine_pointer(NSWindow *w) {
             lh = h;
             fprintf(stderr, "[host] engine resolution -> %gx%g\n", w, h);
             [self fitWindowToEngineWidth:w height:h];
+        }
+    }
+    {
+        static int k;
+        if ((k++ % 60) == 0) { // keep the refresh step of the window's current screen up to date
+            NSScreen *sc = self.window.screen ?: [NSScreen mainScreen];
+            if (sc.minimumRefreshInterval > 0)
+                host_screen_step_ms = (float)(sc.minimumRefreshInterval * 1000.0);
+            if (@available(macOS 14.0, *)) {
+                float top = (float)sc.maximumFramesPerSecond;
+                if (top < 60)
+                    top = 60;
+                if (host_pace_link && top != host_pace_top) { // moved to a faster or slower screen
+                    ((CADisplayLink *)host_pace_link).preferredFrameRateRange = CAFrameRateRangeMake(30, top, top);
+                    host_pace_top = top;
+                    fprintf(stderr, "[host] frame pacing: now up to %.0f fps (%s)\n", top, sc.localizedName.UTF8String);
+                }
+            }
         }
     }
     [self updateSurfaceMapping];

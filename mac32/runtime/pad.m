@@ -9,7 +9,8 @@
 // macOS delivers their input on the main thread while the app is in front; each change is copied into a small
 // snapshot under a lock, and the game's thread reads the snapshot. Nothing here blocks or polls hardware.
 //
-// Not done yet: rumble (host_pad_rumble only remembers the request).
+// Not done yet: rumble (host_pad_rumble accepts the request and ignores it).
+// For unattended test runs, host_pad_script() presses buttons in slot 0 (RT32_INPUT "frame:pad:0x1000").
 #import <Foundation/Foundation.h>
 #import <GameController/GameController.h>
 #include <os/lock.h>

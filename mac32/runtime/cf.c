@@ -6,6 +6,8 @@
 //    lets a HiDPI 4K display offer 3840x2160 in the game's resolution menu.
 //  * Fullscreen following (rt_game_fullscreen, fs_note, SetWindowBounds): the game's Fullscreen option now works.
 //  * CGLDescribeRenderer: video-memory answers clamped to what a 32-bit game can hold.
+//  * IOKit device queries (IOServiceMatching and friends): still answered "no devices", but they now log what the
+//    game asked for, which is how its controller handling was found (see pad.m for the replacement).
 // Background: a "handle" is a small 32-bit ticket the 32-bit game holds in place of a 64-bit CoreFoundation pointer.
 // =====================================================================
 // CoreFoundation bridge (guest handles <-> host CF objects), CoreGraphics display queries on the current API,

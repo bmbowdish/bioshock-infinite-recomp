@@ -60,6 +60,16 @@ Tested with an Xbox controller. Rumble is not implemented yet.
 
 **On Mac keyboards, hold `fn` with these keys** (`fn`+`F12`, `fn`+`F9`).
 
+### Optional switches
+Set these as environment variables when starting the app from Terminal, for example
+`RT32_PACE=display build/BioShockInfiniteRecomp.app/Contents/MacOS/BioShock3`.
+
+| Switch | What it does |
+|---|---|
+| `RT32_PACE=display` | Lets the display start each frame instead of a 60 Hz timer. Removes the 60 fps ceiling on faster screens and lets a variable-refresh (adaptive sync / ProMotion) screen follow the game. Measured on one 48-120 Hz monitor, fullscreen: up to 120 fps, with frames following the display's variable refresh. Not yet the default. |
+| `RT32_WARM=1` | Experimental shader warm-up: does the graphics driver's first-use work during loading (see below). |
+| `RT32_HUD=1` | Starts with the performance overlay on. |
+
 ## Known limitations
 - The first time each level is loaded on a Mac, macOS builds its shader cache for the game: that load takes
   noticeably longer and stutters. Later loads of the same level are quick.
